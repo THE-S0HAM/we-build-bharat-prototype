@@ -1,0 +1,617 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  OrbitOps - CommunityOps Agent
+  AI operations layer for community-led events
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-sonnet-4-20250514-v1:0
+  BedrockRegion:
+    Type: String
+    Default: us-east-1
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        STAGE: !Ref Stage
+        MAIN_TABLE: !Ref MainTable
+        AUDIT_TABLE: !Ref AuditTable
+        TICKET_BUCKET: !Ref TicketBucket
+        EVENT_BUS_NAME: !Ref EventBus
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+        BEDROCK_REGION: !Ref BedrockRegion
+        POWERTOOLS_SERVICE_NAME: orbitops
+        LOG_LEVEL: INFO
+    Architectures:
+      - x86_64
+
+Resources:
+
+  # ===================================================================
+  # Cognito - Identity
+  # ===================================================================
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub OrbitOps-UserPool-${Stage}
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub OrbitOps-WebClient-${Stage}
+      UserPoolId: !Ref UserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      SupportedIdentityProviders:
+        - COGNITO
+
+  # ===================================================================
+  # API Gateway
+  # ===================================================================
+
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub OrbitOps-API-${Stage}
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+
+  # ===================================================================
+  # DynamoDB Tables
+  # ===================================================================
+
+  MainTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub OrbitOps-Main-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub OrbitOps-Audit-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ===================================================================
+  # S3 - Ticket Artifacts
+  # ===================================================================
+
+  TicketBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub orbitops-tickets-${Stage}-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldTickets
+            Status: Enabled
+            ExpirationInDays: 90
+
+  # Knowledge bucket for RAG seed documents
+  KnowledgeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub orbitops-knowledge-${Stage}-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ===================================================================
+  # EventBridge
+  # ===================================================================
+
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub OrbitOps-EventBus-${Stage}
+
+  # ===================================================================
+  # Lambda Functions - Check-In
+  # ===================================================================
+
+  CheckinSearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-checkin-search-${Stage}
+      Handler: services.checkin.handlers.search_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/checkin/search
+            Method: POST
+
+  CheckinVerifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-checkin-verify-${Stage}
+      Handler: services.checkin.handlers.verify_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/checkin/verify
+            Method: POST
+
+  CheckinRecoverFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-checkin-recover-${Stage}
+      Handler: services.checkin.handlers.recover_handler
+      CodeUri: .
+      Timeout: 60
+      MemorySize: 512
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - S3CrudPolicy:
+            BucketName: !Ref TicketBucket
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/checkin/recover
+            Method: POST
+
+  CheckinReconcileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-checkin-reconcile-${Stage}
+      Handler: services.checkin.handlers.reconcile_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/checkin/reconcile
+            Method: POST
+
+  CheckinCompleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-checkin-complete-${Stage}
+      Handler: services.checkin.handlers.complete_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/checkin/complete
+            Method: POST
+
+  CheckinVerifyQrFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-checkin-verify-qr-${Stage}
+      Handler: services.checkin.handlers.verify_qr_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/checkin/verify-qr
+            Method: POST
+
+  # ===================================================================
+  # Lambda Functions - Core API
+  # ===================================================================
+
+  EventsCrudFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-api-events-${Stage}
+      Handler: services.api.events_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        GetEvents:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events
+            Method: GET
+        CreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events
+            Method: POST
+        GetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}
+            Method: GET
+        UpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}
+            Method: PUT
+
+  SpeakersCrudFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-api-speakers-${Stage}
+      Handler: services.api.speakers_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        GetSpeakers:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/speakers
+            Method: GET
+        CreateSpeaker:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/speakers
+            Method: POST
+        UpdateSpeaker:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/speakers/{speakerId}
+            Method: PUT
+
+  TasksCrudFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-api-tasks-${Stage}
+      Handler: services.api.tasks_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        GetTasks:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams/{teamId}/tasks
+            Method: GET
+        CreateTask:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams/{teamId}/tasks
+            Method: POST
+        UpdateTask:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams/{teamId}/tasks/{taskId}
+            Method: PUT
+
+  ApprovalsCrudFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-api-approvals-${Stage}
+      Handler: services.api.approvals_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        GetApprovals:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/approvals
+            Method: GET
+        DecideApproval:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/approvals/{approvalId}
+            Method: PUT
+
+  IncidentsCrudFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-api-incidents-${Stage}
+      Handler: services.api.incidents_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        GetIncidents:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/incidents
+            Method: GET
+        CreateIncident:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/incidents
+            Method: POST
+        UpdateIncident:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/incidents/{incidentId}
+            Method: PUT
+
+  AuditLogFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-api-audit-${Stage}
+      Handler: services.api.audit_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref AuditTable
+      Events:
+        GetAuditLog:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/audit
+            Method: GET
+
+  CommandCenterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-api-command-center-${Stage}
+      Handler: services.api.command_center_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref AuditTable
+      Events:
+        GetCommandCenter:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /command-center
+            Method: GET
+
+  # ===================================================================
+  # Step Functions - Speaker Follow-up Workflow
+  # ===================================================================
+
+  SpeakerFollowupStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub OrbitOps-SpeakerFollowup-${Stage}
+      DefinitionUri: workflows/speaker-followup/definition.asl.json
+      DefinitionSubstitutions:
+        SpeakerFollowupFunctionArn: !GetAtt SpeakerFollowupFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SpeakerFollowupFunction
+
+  SpeakerFollowupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-workflow-speaker-followup-${Stage}
+      Handler: services.workflows.speaker_followup.handler
+      CodeUri: .
+      Timeout: 120
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+
+  # ===================================================================
+  # Step Functions - Incident Response Workflow
+  # ===================================================================
+
+  IncidentResponseStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub OrbitOps-IncidentResponse-${Stage}
+      DefinitionUri: workflows/incident-response/definition.asl.json
+      DefinitionSubstitutions:
+        IncidentResponseFunctionArn: !GetAtt IncidentResponseFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref IncidentResponseFunction
+
+  IncidentResponseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub orbitops-workflow-incident-response-${Stage}
+      Handler: services.workflows.incident_response.handler
+      CodeUri: .
+      Timeout: 120
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway URL
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+  MainTableName:
+    Description: Main DynamoDB table name
+    Value: !Ref MainTable
+  AuditTableName:
+    Description: Audit DynamoDB table name
+    Value: !Ref AuditTable
+  TicketBucketName:
+    Description: S3 bucket for ticket artifacts
+    Value: !Ref TicketBucket
+  EventBusName:
+    Description: EventBridge event bus name
+    Value: !Ref EventBus

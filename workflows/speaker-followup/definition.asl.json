@@ -1,0 +1,239 @@
+{
+  "Comment": "Speaker follow-up workflow. Manages the async lifecycle of speaker outreach: invite → wait → follow-up → policy check → approval → send → wait → extract response.",
+  "StartAt": "InviteSpeaker",
+  "States": {
+    "InviteSpeaker": {
+      "Type": "Task",
+      "Resource": "${SpeakerFollowupFunctionArn}",
+      "Parameters": {
+        "action": "SEND_INVITE",
+        "speaker_id.$": "$.speaker_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id"
+      },
+      "ResultPath": "$.invite_result",
+      "Next": "WaitForResponse",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "FollowupFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "WaitForResponse": {
+      "Type": "Wait",
+      "Seconds": 86400,
+      "Next": "CheckResponse"
+    },
+
+    "CheckResponse": {
+      "Type": "Task",
+      "Resource": "${SpeakerFollowupFunctionArn}",
+      "Parameters": {
+        "action": "CHECK_RESPONSE",
+        "speaker_id.$": "$.speaker_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id"
+      },
+      "ResultPath": "$.response_check",
+      "Next": "ResponseReceived?",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "FollowupFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "ResponseReceived?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.response_check.response_received",
+          "BooleanEquals": true,
+          "Next": "ExtractResponseData"
+        },
+        {
+          "Variable": "$.response_check.max_followups_reached",
+          "BooleanEquals": true,
+          "Next": "EscalateSpeaker"
+        }
+      ],
+      "Default": "CheckFollowupPolicy"
+    },
+
+    "CheckFollowupPolicy": {
+      "Type": "Task",
+      "Resource": "${SpeakerFollowupFunctionArn}",
+      "Parameters": {
+        "action": "CHECK_FOLLOWUP_POLICY",
+        "speaker_id.$": "$.speaker_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id",
+        "followup_count.$": "$.response_check.followup_count"
+      },
+      "ResultPath": "$.policy_result",
+      "Next": "ApprovalRequired?",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "FollowupFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "ApprovalRequired?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.policy_result.requires_approval",
+          "BooleanEquals": true,
+          "Next": "RequestApproval"
+        }
+      ],
+      "Default": "SendFollowup"
+    },
+
+    "RequestApproval": {
+      "Type": "Task",
+      "Resource": "${SpeakerFollowupFunctionArn}",
+      "Parameters": {
+        "action": "REQUEST_APPROVAL",
+        "speaker_id.$": "$.speaker_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id",
+        "followup_count.$": "$.response_check.followup_count"
+      },
+      "ResultPath": "$.approval_result",
+      "Next": "WaitForApproval"
+    },
+
+    "WaitForApproval": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "${SpeakerFollowupFunctionArn}",
+        "Payload": {
+          "action": "AWAIT_APPROVAL",
+          "task_token.$": "$$.Task.Token",
+          "approval_id.$": "$.approval_result.approval_id",
+          "speaker_id.$": "$.speaker_id",
+          "event_id.$": "$.event_id",
+          "organization_id.$": "$.organization_id"
+        }
+      },
+      "ResultPath": "$.approval_decision",
+      "Next": "ApprovalDecision",
+      "TimeoutSeconds": 604800,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.Timeout"],
+          "Next": "EscalateSpeaker",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "ApprovalDecision": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.approval_decision.decision",
+          "StringEquals": "APPROVED",
+          "Next": "SendFollowup"
+        }
+      ],
+      "Default": "FollowupDeclined"
+    },
+
+    "SendFollowup": {
+      "Type": "Task",
+      "Resource": "${SpeakerFollowupFunctionArn}",
+      "Parameters": {
+        "action": "SEND_FOLLOWUP",
+        "speaker_id.$": "$.speaker_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id"
+      },
+      "ResultPath": "$.followup_result",
+      "Next": "WaitForResponse",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException"],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 2
+        }
+      ]
+    },
+
+    "ExtractResponseData": {
+      "Type": "Task",
+      "Resource": "${SpeakerFollowupFunctionArn}",
+      "Parameters": {
+        "action": "EXTRACT_RESPONSE",
+        "speaker_id.$": "$.speaker_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id"
+      },
+      "ResultPath": "$.extraction_result",
+      "Next": "UpdateSpeakerState"
+    },
+
+    "UpdateSpeakerState": {
+      "Type": "Task",
+      "Resource": "${SpeakerFollowupFunctionArn}",
+      "Parameters": {
+        "action": "UPDATE_SPEAKER",
+        "speaker_id.$": "$.speaker_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id",
+        "extracted_data.$": "$.extraction_result"
+      },
+      "ResultPath": "$.update_result",
+      "End": true
+    },
+
+    "EscalateSpeaker": {
+      "Type": "Task",
+      "Resource": "${SpeakerFollowupFunctionArn}",
+      "Parameters": {
+        "action": "ESCALATE",
+        "speaker_id.$": "$.speaker_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id",
+        "reason": "MAX_FOLLOWUPS_REACHED_OR_TIMEOUT"
+      },
+      "End": true
+    },
+
+    "FollowupDeclined": {
+      "Type": "Task",
+      "Resource": "${SpeakerFollowupFunctionArn}",
+      "Parameters": {
+        "action": "RECORD_DECLINED",
+        "speaker_id.$": "$.speaker_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id"
+      },
+      "End": true
+    },
+
+    "FollowupFailed": {
+      "Type": "Fail",
+      "Error": "FollowupFailed",
+      "Cause": "Speaker follow-up workflow encountered an unrecoverable error"
+    }
+  }
+}

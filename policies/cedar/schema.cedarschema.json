@@ -1,0 +1,74 @@
+{
+  "OrbitOps": {
+    "entityTypes": {
+      "User": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "role": { "type": "String" },
+            "organization_id": { "type": "String" },
+            "email": { "type": "String" }
+          }
+        }
+      },
+      "Agent": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "agent_name": { "type": "String" },
+            "organization_id": { "type": "String" }
+          }
+        }
+      },
+      "Event": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "organization_id": { "type": "String" },
+            "event_id": { "type": "String" },
+            "status": { "type": "String" }
+          }
+        }
+      },
+      "Registration": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "organization_id": { "type": "String" },
+            "event_id": { "type": "String" },
+            "registration_id": { "type": "String" }
+          }
+        }
+      },
+      "Speaker": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "organization_id": { "type": "String" },
+            "event_id": { "type": "String" },
+            "speaker_id": { "type": "String" }
+          }
+        }
+      }
+    },
+    "actions": {
+      "ReadOperationalState": {},
+      "CreateInternalTask": {},
+      "DraftMessage": {},
+      "ScheduleReminder": {},
+      "SummarizeData": {},
+      "SendRoutineCommunication": {},
+      "UpdateEventMetadata": {},
+      "ProcessRefund": {},
+      "BookAccommodation": {},
+      "ConfirmSpeaker": {},
+      "CancelRegistration": {},
+      "ModifyPublishedEvent": {},
+      "GenerateTicket": {},
+      "CompleteCheckIn": {},
+      "CreateIncident": {},
+      "ResolveIncident": {},
+      "SendSpeakerFollowup": {}
+    }
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "Comment": "Incident response workflow. Detects risk, analyzes context, identifies backups, prepares recommendation, requests human approval for HIGH/CRITICAL incidents, then executes resolution.",
+  "StartAt": "AnalyzeIncident",
+  "States": {
+    "AnalyzeIncident": {
+      "Type": "Task",
+      "Resource": "${IncidentResponseFunctionArn}",
+      "Parameters": {
+        "action": "ANALYZE",
+        "incident_id.$": "$.incident_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id"
+      },
+      "ResultPath": "$.analysis",
+      "Next": "SeverityCheck",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "IncidentFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "SeverityCheck": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.analysis.severity",
+          "StringEquals": "CRITICAL",
+          "Next": "PrepareRecommendation"
+        },
+        {
+          "Variable": "$.analysis.severity",
+          "StringEquals": "HIGH",
+          "Next": "PrepareRecommendation"
+        }
+      ],
+      "Default": "AutoResolve"
+    },
+
+    "PrepareRecommendation": {
+      "Type": "Task",
+      "Resource": "${IncidentResponseFunctionArn}",
+      "Parameters": {
+        "action": "PREPARE_RECOMMENDATION",
+        "incident_id.$": "$.incident_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id",
+        "analysis.$": "$.analysis"
+      },
+      "ResultPath": "$.recommendation",
+      "Next": "RequestHumanApproval"
+    },
+
+    "RequestHumanApproval": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "${IncidentResponseFunctionArn}",
+        "Payload": {
+          "action": "REQUEST_APPROVAL",
+          "task_token.$": "$$.Task.Token",
+          "incident_id.$": "$.incident_id",
+          "event_id.$": "$.event_id",
+          "organization_id.$": "$.organization_id",
+          "recommendation.$": "$.recommendation"
+        }
+      },
+      "ResultPath": "$.approval",
+      "Next": "ApprovalOutcome",
+      "TimeoutSeconds": 3600,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.Timeout"],
+          "Next": "EscalateIncident",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "ApprovalOutcome": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.approval.decision",
+          "StringEquals": "APPROVED",
+          "Next": "ExecuteResolution"
+        }
+      ],
+      "Default": "IncidentRejected"
+    },
+
+    "AutoResolve": {
+      "Type": "Task",
+      "Resource": "${IncidentResponseFunctionArn}",
+      "Parameters": {
+        "action": "AUTO_RESOLVE",
+        "incident_id.$": "$.incident_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id",
+        "analysis.$": "$.analysis"
+      },
+      "ResultPath": "$.resolution",
+      "Next": "RecordResolution"
+    },
+
+    "ExecuteResolution": {
+      "Type": "Task",
+      "Resource": "${IncidentResponseFunctionArn}",
+      "Parameters": {
+        "action": "EXECUTE_RESOLUTION",
+        "incident_id.$": "$.incident_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id",
+        "recommendation.$": "$.recommendation",
+        "approval.$": "$.approval"
+      },
+      "ResultPath": "$.resolution",
+      "Next": "RecordResolution"
+    },
+
+    "RecordResolution": {
+      "Type": "Task",
+      "Resource": "${IncidentResponseFunctionArn}",
+      "Parameters": {
+        "action": "RECORD_RESOLUTION",
+        "incident_id.$": "$.incident_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id",
+        "resolution.$": "$.resolution"
+      },
+      "End": true
+    },
+
+    "EscalateIncident": {
+      "Type": "Task",
+      "Resource": "${IncidentResponseFunctionArn}",
+      "Parameters": {
+        "action": "ESCALATE",
+        "incident_id.$": "$.incident_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id",
+        "reason": "APPROVAL_TIMEOUT"
+      },
+      "End": true
+    },
+
+    "IncidentRejected": {
+      "Type": "Task",
+      "Resource": "${IncidentResponseFunctionArn}",
+      "Parameters": {
+        "action": "RECORD_REJECTION",
+        "incident_id.$": "$.incident_id",
+        "event_id.$": "$.event_id",
+        "organization_id.$": "$.organization_id"
+      },
+      "End": true
+    },
+
+    "IncidentFailed": {
+      "Type": "Fail",
+      "Error": "IncidentResponseFailed",
+      "Cause": "Incident response workflow encountered an unrecoverable error"
+    }
+  }
+}

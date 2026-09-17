@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build outputs
+dist/
+build/
+.aws-sam/
+cdk.out/
+*.js.map
+
+# Environment and secrets
+.env
+.env.local
+.env.production
+*.pem
+*.key
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+coverage/
+htmlcov/
+.coverage
+.pytest_cache/
+.nyc_output/
+
+# SAM
+samconfig.toml
+
+# Logs
+*.log

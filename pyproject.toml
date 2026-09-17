@@ -1,0 +1,61 @@
+[project]
+name = "orbitops"
+version = "0.1.0"
+description = "CommunityOps Agent — AI operations layer for community-led events"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.35.0",
+    "pydantic>=2.9.0",
+    "aws-lambda-powertools>=3.0.0",
+    "strands-agents>=0.1.0",
+    "strands-agents-tools>=0.1.0",
+    "cedarpy>=4.0.0",
+    "reportlab>=4.0.0",
+    "qrcode>=8.0",
+    "Pillow>=11.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.24.0",
+    "moto[dynamodb,s3,events,stepfunctions,cognitoidp,ses]>=5.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "boto3-stubs[dynamodb,s3,events,stepfunctions,cognito-idp,bedrock-runtime,ses,secretsmanager]>=1.35.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "T20"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "workflow: Workflow tests",
+    "agent: Agent tests",
+    "security: Security tests",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
