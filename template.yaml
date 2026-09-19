@@ -15,6 +15,15 @@ Parameters:
   BedrockRegion:
     Type: String
     Default: us-east-1
+  DemoPassword:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >
+      Password for the single restricted demo identity that POST /demo/session authenticates.
+      Held only in that function's environment so the browser never receives a credential. Leave
+      empty to disable demo access: the endpoint then refuses clearly and the console hides the
+      demo action rather than offering a button that fails.
   QrSigningSecret:
     Type: String
     Default: ''
@@ -84,7 +93,18 @@ Resources:
       ExplicitAuthFlows:
         - ALLOW_USER_SRP_AUTH
         - ALLOW_REFRESH_TOKEN_AUTH
+        # Required by AdminInitiateAuth, which the demo-session endpoint uses to sign in one
+        # fixed, restricted identity without the browser ever holding a password. This does widen
+        # the client's auth flows, so it is enabled deliberately: the flow is reachable only
+        # through that single Lambda, which takes no username parameter and can therefore
+        # authenticate nothing else.
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
       PreventUserExistenceErrors: ENABLED
+      # Only Cognito's own directory. Google, Amazon and Apple would each need a UserPoolDomain,
+      # a UserPoolIdentityProvider with a client id and secret obtained by registering the app with
+      # that provider, plus CallbackURLs and AllowedOAuthFlows on this client. None of that is
+      # committable without real provider registration, so the console does not offer those
+      # buttons rather than rendering ones that cannot work.
       SupportedIdentityProviders:
         - COGNITO
 
@@ -755,6 +775,53 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /events/{eventId}/workload
             Method: GET
+        GetAttendees:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/attendees
+            Method: GET
+
+  # ===================================================================
+  # Demo access
+  # ===================================================================
+
+  # Signs in one fixed, restricted identity so a visitor can reach the product without credentials
+  # ever passing through the browser. The username is a constant in the handler, not a request
+  # parameter, so this cannot be used to authenticate anything else.
+  DemoSessionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub communityops-api-demo-session-${Stage}
+      Handler: services.api.demo_handler.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          DEMO_PASSWORD: !Ref DemoPassword
+          DEMO_USERNAME: demo@communityops.local
+          DEMO_ORGANIZATION_ID: ORG-wemakedev
+          USER_POOL_ID: !Ref UserPool
+          USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Policies:
+        # Scoped to this pool and this one action. Notably not AdminCreateUser or
+        # AdminSetUserPassword: the function signs in an identity that already exists and cannot
+        # create or modify accounts.
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminInitiateAuth
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        StartDemoSession:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /demo/session
+            Method: POST
+            # The only unauthenticated route in the API. It has to be: its whole purpose is
+            # obtaining a session for somebody who does not have one yet.
+            Auth:
+              Authorizer: NONE
 
   # ===================================================================
   # Lambda Functions - Operations domain

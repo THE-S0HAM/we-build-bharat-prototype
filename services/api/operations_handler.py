@@ -55,6 +55,8 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return get_brief(event, event_id)
     if path.endswith("/workload"):
         return get_workload(event, event_id)
+    if path.endswith("/attendees"):
+        return get_attendees(event, event_id)
     return get_command_center(event)
 
 
@@ -442,3 +444,130 @@ def _recent_agent_activity(ctx: Any) -> list[dict[str, Any]]:
     except Exception:  # noqa: BLE001
         logger.warning("Could not load the recent activity feed", exc_info=True)
         return []
+
+
+@handle_dynamodb_errors
+def get_attendees(event: dict[str, Any], event_id: str) -> dict[str, Any]:
+    """Attendee readiness, as aggregates plus the exceptions somebody can act on.
+
+    Added because the frontend had no way to reach this: ``AttendeeState`` already computed every
+    figure and the agent already read it through ``get_attendee_summary``, but no HTTP route exposed
+    it. This is a projection over the existing aggregation, not a second implementation — if it
+    recomputed the numbers, the screen, the agent and the health engine could disagree about how many
+    registrations are missing dietary details.
+
+    Aggregates are the product. The exception lists are deliberately the only place individual
+    registrations appear, and they carry the registration id and name rather than full contact
+    details, because the operational question is "who do we still need something from", not "show me
+    everyone".
+    """
+    snapshot, ctx, denied = _snapshot_or_denied(event, event_id)
+    if denied:
+        return denied
+    assert snapshot is not None and ctx is not None
+
+    from boto3.dynamodb.conditions import Attr
+
+    from services.shared.keys import attendee_prefix, registration_prefix
+
+    attendees = snapshot.attendees
+
+    # The exception lists need per-registration detail, which the snapshot deliberately folds into
+    # counts. Two prefix queries rather than reusing the snapshot's internals, because the snapshot
+    # is built for scoring and does not retain the rows.
+    registrations = ctx.repo.query_all(
+        ctx.organization_id,
+        registration_prefix(event_id),
+        filter_expression=Attr("status").ne("CANCELLED"),
+        max_items=2000,
+    )
+    detail_rows = ctx.repo.query_all(ctx.organization_id, attendee_prefix(event_id), max_items=2000)
+    detail_by_registration = {str(row.get("registration_id", "")): row for row in detail_rows}
+
+    missing_dietary: list[dict[str, Any]] = []
+    accommodation_pending: list[dict[str, Any]] = []
+    arrival_unconfirmed: list[dict[str, Any]] = []
+
+    for registration in registrations:
+        registration_id = str(registration.get("registration_id", ""))
+        detail = detail_by_registration.get(registration_id)
+        entry = {
+            "registration_id": registration_id,
+            "attendee_name": registration.get("attendee_name", ""),
+            "ticket_type": registration.get("ticket_type", ""),
+        }
+
+        # No attendee record at all counts as missing: from the catering team's point of view an
+        # unanswered question and an unasked one are the same gap.
+        if detail is None or not detail.get("dietary_requirements"):
+            missing_dietary.append(entry)
+        if detail is not None and detail.get("accommodation_required"):
+            accommodation_pending.append(
+                {**entry, "nights": detail.get("accommodation_details", "")}
+            )
+        if (
+            detail is not None
+            and detail.get("arrival_date")
+            and not detail.get("arrival_confirmed")
+        ):
+            arrival_unconfirmed.append({**entry, "arrival_date": detail.get("arrival_date", "")})
+
+    # The readiness funnel. Each stage is a subset of the one above it, so the stage counts only
+    # make sense if they are derived from the same population in one pass.
+    funnel = [
+        {
+            "stage": "Registered",
+            "count": attendees.total_registered,
+            "detail": "Signed up for the event",
+        },
+        {
+            "stage": "Confirmed",
+            "count": attendees.confirmed,
+            "detail": "Registration and payment in order",
+        },
+        {
+            "stage": "Information complete",
+            "count": max(0, attendees.confirmed - attendees.missing_information),
+            "detail": "Dietary and arrival details provided",
+        },
+        {
+            "stage": "Checked in",
+            "count": attendees.checked_in,
+            "detail": "Arrived at the venue",
+        },
+    ]
+
+    return success(
+        {
+            "event_id": event_id,
+            "event_name": snapshot.event.get("name", ""),
+            "summary": {
+                "total_registered": attendees.total_registered,
+                "confirmed": attendees.confirmed,
+                "cancelled": attendees.cancelled,
+                "waitlisted": attendees.waitlisted,
+                "checked_in": attendees.checked_in,
+                "not_checked_in": attendees.not_checked_in,
+                "accommodation_required": attendees.accommodation_required,
+                "dietary_provided": attendees.dietary_provided,
+                "dietary_missing": attendees.dietary_missing,
+                "arrival_confirmed": attendees.arrival_confirmed,
+                "arrival_conflicts": attendees.arrival_conflicts,
+                "missing_information": attendees.missing_information,
+                "data_completeness_percent": attendees.data_completeness_percent,
+                "expected_attendees": coerce_int(snapshot.event.get("expected_attendees")),
+                "registration_target": coerce_int(snapshot.event.get("registration_target")),
+            },
+            "funnel": funnel,
+            # Capped: a leader acts on a list they can read, and an event with 200 gaps needs a
+            # bulk action rather than 200 rows. The count above is the real total.
+            "exceptions": {
+                "missing_dietary": missing_dietary[:25],
+                "missing_dietary_total": len(missing_dietary),
+                "accommodation_pending": accommodation_pending[:25],
+                "accommodation_pending_total": len(accommodation_pending),
+                "arrival_unconfirmed": arrival_unconfirmed[:25],
+                "arrival_unconfirmed_total": len(arrival_unconfirmed),
+            },
+        }
+    )
