@@ -16,9 +16,10 @@ from services.shared.api_response import error, success
 from services.shared.audit import create_audit_event
 from services.shared.dynamodb import DynamoDBRepository
 from services.shared.models.base import ErrorCategory, utc_now
+from services.shared.tenancy import authorize_organization
 
 logger = logging.getLogger(__name__)
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -57,6 +58,10 @@ def _list_speakers(event: dict[str, Any], event_id: str) -> dict[str, Any]:
     if not org_id or not event_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id and eventId are required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     repo = DynamoDBRepository(MAIN_TABLE)
     items = repo.query_by_pk(org_id, f"EVENT#{event_id}#SPEAKER#", limit=100)
     return success({"speakers": items, "count": len(items)})
@@ -69,6 +74,10 @@ def _create_speaker(event: dict[str, Any], event_id: str) -> dict[str, Any]:
 
     if not org_id or not event_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id and eventId are required")
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     name = body.get("name", "").strip()
     if not name:
@@ -127,17 +136,34 @@ def _update_speaker(event: dict[str, Any], event_id: str, speaker_id: str) -> di
     if not org_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id is required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     repo = DynamoDBRepository(MAIN_TABLE)
     existing = repo.get_item(org_id, f"EVENT#{event_id}#SPEAKER#{speaker_id}")
     if not existing:
         return error(ErrorCategory.NOT_FOUND, "Speaker not found")
 
     allowed = [
-        "name", "email", "phone", "status", "topic", "bio", "session_type",
-        "session_duration_minutes", "travel_required", "accommodation_required",
-        "travel_details", "accommodation_details", "special_requirements",
-        "availability_notes", "slides_submitted", "av_requirements",
-        "is_backup", "backup_for_speaker_id",
+        "name",
+        "email",
+        "phone",
+        "status",
+        "topic",
+        "bio",
+        "session_type",
+        "session_duration_minutes",
+        "travel_required",
+        "accommodation_required",
+        "travel_details",
+        "accommodation_details",
+        "special_requirements",
+        "availability_notes",
+        "slides_submitted",
+        "av_requirements",
+        "is_backup",
+        "backup_for_speaker_id",
     ]
     updates = {k: body[k] for k in allowed if k in body}
     updates["updated_at"] = utc_now().isoformat()

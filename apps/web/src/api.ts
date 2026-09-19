@@ -1,13 +1,16 @@
 /**
- * API client for OrbitOps backend.
+ * API client for the CommunityOps backend.
  *
- * In production, this talks to API Gateway. For local dev,
- * Vite proxies /api to the local backend.
+ * Talks to API Gateway, attaching the Cognito ID token that the deployed
+ * user-pool authorizer requires.
  *
- * For the demo/hackathon, we include mock data fallback so the
- * frontend works without a deployed backend.
+ * Mock data is opt-in via VITE_USE_MOCK=true and is intended for local UI work
+ * without a backend. It is deliberately NOT a fallback: when a real API URL is
+ * configured and the backend fails, the error surfaces to the user rather than
+ * being masked by fabricated operational data.
  */
 
+import { getIdToken } from "./auth";
 import type {
   Approval,
   AuditEvent,
@@ -23,22 +26,60 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const ORG_ID = import.meta.env.VITE_ORG_ID || "ORG-wemakedev";
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true" || !API_BASE;
+
+/**
+ * Mock mode is explicit opt-in. A missing API URL does not silently switch to
+ * mock data, because that would present fabricated operational state as real.
+ */
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
+
+export const isMockMode = USE_MOCK;
+export const organizationId = ORG_ID;
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly category?: string,
+  ) {
+    super(message);
+  }
+}
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   if (USE_MOCK) {
     return mockFetch<T>(path, options);
   }
+
+  if (!API_BASE) {
+    throw new ApiError(
+      "No API URL is configured. Set VITE_API_URL to the deployed API, or VITE_USE_MOCK=true for local demo data.",
+      0,
+      "CONFIGURATION_ERROR",
+    );
+  }
+
+  const token = await getIdToken();
+  if (!token) {
+    throw new ApiError("Your session has expired. Please sign in again.", 401, "UNAUTHORIZED");
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      Authorization: token,
       ...options?.headers,
     },
   });
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: "Request failed" }));
-    throw new Error(err.message || `HTTP ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(
+      err.message || `Request failed (HTTP ${res.status})`,
+      res.status,
+      err.error,
+    );
   }
   return res.json();
 }
@@ -173,7 +214,6 @@ const MOCK_REGISTRATIONS = [
   { registration_id: "REG-2026-004822", event_id: MOCK_EVENT_ID, attendee_name: "Arjun Patel", attendee_email: "arjun.patel@example.com", attendee_phone: "+919876543211", status: "CONFIRMED" as const, payment_status: "CAPTURED" as const, ticket_type: "GENERAL", is_checked_in: false },
 ];
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
 async function mockFetch<T>(path: string, _options?: RequestInit): Promise<T> {
   await new Promise((r) => setTimeout(r, 200)); // Simulate network latency
 

@@ -19,12 +19,12 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
-from services.shared.models.base import AuditEvent, utc_now
+from services.shared.models.base import AuditEvent
 
 logger = logging.getLogger(__name__)
 
-AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "OrbitOps-Audit-dev")
-EVENT_BUS_NAME = os.environ.get("EVENT_BUS_NAME", "OrbitOps-EventBus-dev")
+AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "CommunityOps-Audit-dev")
+EVENT_BUS_NAME = os.environ.get("EVENT_BUS_NAME", "CommunityOps-EventBus-dev")
 
 
 def create_audit_event(
@@ -101,7 +101,7 @@ def _publish_to_eventbridge(audit: AuditEvent) -> None:
         events_client.put_events(
             Entries=[
                 {
-                    "Source": "orbitops.audit",
+                    "Source": "communityops.audit",
                     "DetailType": audit.action,
                     "Detail": json.dumps(audit.model_dump(mode="json"), default=str),
                     "EventBusName": EVENT_BUS_NAME,

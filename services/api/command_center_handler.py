@@ -13,7 +13,6 @@ Returns only what needs attention:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any
@@ -21,10 +20,11 @@ from typing import Any
 from services.shared.api_response import error, success
 from services.shared.dynamodb import DynamoDBRepository
 from services.shared.models.base import ErrorCategory
+from services.shared.tenancy import authorize_organization
 
 logger = logging.getLogger(__name__)
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
-AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "OrbitOps-Audit-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
+AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "CommunityOps-Audit-dev")
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -34,6 +34,10 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     if not org_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id is required")
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     main_repo = DynamoDBRepository(MAIN_TABLE)
     audit_repo = DynamoDBRepository(AUDIT_TABLE)
@@ -65,7 +69,8 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Incidents
         incidents = main_repo.query_by_pk(org_id, f"EVENT#{eid}#INCIDENT#", limit=50)
         critical_incidents = [
-            i for i in incidents
+            i
+            for i in incidents
             if i.get("severity") in ("CRITICAL", "HIGH") and i.get("status") not in ("RESOLVED",)
         ]
         total_critical_incidents += len(critical_incidents)
@@ -83,31 +88,35 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         blocked = [t for t in tasks if t.get("status") == "BLOCKED"]
         total_overdue_tasks += len(overdue)
 
-        event_summaries.append({
-            "event_id": eid,
-            "name": evt.get("name", ""),
-            "status": evt.get("status", ""),
-            "pending_approvals": pending_count,
-            "critical_incidents": len(critical_incidents),
-            "overdue_tasks": len(overdue),
-            "blocked_tasks": len(blocked),
-            "total_tasks": len(tasks),
-        })
+        event_summaries.append(
+            {
+                "event_id": eid,
+                "name": evt.get("name", ""),
+                "status": evt.get("status", ""),
+                "pending_approvals": pending_count,
+                "critical_incidents": len(critical_incidents),
+                "overdue_tasks": len(overdue),
+                "blocked_tasks": len(blocked),
+                "total_tasks": len(tasks),
+            }
+        )
 
     # Recent audit events across all events
     recent_audits = audit_repo.query_by_pk(org_id, "AUDIT#", limit=20)
     recent_audits.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     recent_actions = recent_audits[:10]
 
-    return success({
-        "organization_id": org_id,
-        "summary": {
-            "active_events": len(active_events),
-            "total_events": len(events),
-            "pending_approvals": total_pending_approvals,
-            "critical_incidents": total_critical_incidents,
-            "overdue_tasks": total_overdue_tasks,
-        },
-        "events": event_summaries,
-        "recent_actions": recent_actions,
-    })
+    return success(
+        {
+            "organization_id": org_id,
+            "summary": {
+                "active_events": len(active_events),
+                "total_events": len(events),
+                "pending_approvals": total_pending_approvals,
+                "critical_incidents": total_critical_incidents,
+                "overdue_tasks": total_overdue_tasks,
+            },
+            "events": event_summaries,
+            "recent_actions": recent_actions,
+        }
+    )

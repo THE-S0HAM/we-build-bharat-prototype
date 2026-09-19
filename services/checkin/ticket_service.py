@@ -20,8 +20,7 @@ import io
 import json
 import logging
 import os
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -33,7 +32,7 @@ from reportlab.pdfgen import canvas
 
 logger = logging.getLogger(__name__)
 
-TICKET_BUCKET = os.environ.get("TICKET_BUCKET", "orbitops-tickets-dev")
+TICKET_BUCKET = os.environ.get("TICKET_BUCKET", "communityops-tickets-dev")
 QR_SECRET_KEY = os.environ.get("QR_SECRET_KEY", "dev-secret-change-in-production")
 PRESIGNED_URL_EXPIRY = int(os.environ.get("PRESIGNED_URL_EXPIRY", "3600"))
 
@@ -57,7 +56,7 @@ def generate_qr_payload(
         "r": registration_id,
         "e": event_id,
         "o": organization_id,
-        "t": datetime.now(timezone.utc).isoformat(),
+        "t": datetime.now(UTC).isoformat(),
         "v": 1,  # payload version for future compatibility
     }
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
@@ -151,8 +150,10 @@ def generate_ticket_pdf(
     # Footer
     c.setFont("Helvetica", 9)
     c.setFillColorRGB(0.5, 0.5, 0.5)
-    c.drawCentredString(width / 2, height - 165 * mm, "Present this QR code at the venue for check-in")
-    c.drawCentredString(width / 2, height - 172 * mm, "Powered by OrbitOps")
+    c.drawCentredString(
+        width / 2, height - 165 * mm, "Present this QR code at the venue for check-in"
+    )
+    c.drawCentredString(width / 2, height - 172 * mm, "Powered by CommunityOps")
 
     c.showPage()
     c.save()

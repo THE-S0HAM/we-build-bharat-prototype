@@ -1,0 +1,21 @@
+# Runtime dependencies for SAM Lambda packaging.
+#
+# Authoritative dependency configuration: pyproject.toml
+# This file exists only because SAM's PythonPipBuilder requires requirements.txt.
+# It lists the subset of pyproject.toml [project.dependencies] that the deployed
+# Lambda handlers actually import at runtime.
+#
+# Deliberately excluded:
+#   boto3 / botocore        - provided by the Lambda Python runtime
+#   strands-agents          - only imported by agents/*, which no Lambda handler loads
+#   strands-agents-tools    - same as above
+#   cedarpy                 - services/shared/policy.py evaluates policy in pure Python
+#   aws-lambda-powertools   - not imported; only POWERTOOLS_SERVICE_NAME env var is set
+#
+# Including the Strands dependency tree inflated the deployment artifact to 86 MB
+# (mcp, opentelemetry, aiohttp, starlette, uvicorn) with no runtime benefit.
+
+pydantic>=2.9.0
+reportlab>=4.0.0
+qrcode>=8.0
+Pillow>=11.0.0

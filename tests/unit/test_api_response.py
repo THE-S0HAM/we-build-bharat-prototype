@@ -2,7 +2,7 @@
 
 import json
 
-from services.shared.api_response import error, success, _category_to_status
+from services.shared.api_response import error, success
 from services.shared.models.base import ErrorCategory
 
 

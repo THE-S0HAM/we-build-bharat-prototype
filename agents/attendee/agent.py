@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-20250514-v1:0")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
 
-ATTENDEE_SYSTEM_PROMPT = """You are the AttendeeOps Agent for OrbitOps — you ensure attendee logistics are complete before events.
+ATTENDEE_SYSTEM_PROMPT = """You are the AttendeeOps Agent for CommunityOps — you ensure attendee logistics are complete before events.
 
 Responsibilities:
 - Identify missing attendee information (dietary, accommodation, arrival, accessibility)

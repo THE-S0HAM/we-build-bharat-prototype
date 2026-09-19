@@ -52,7 +52,9 @@ class Incident(DomainEntity):
     # Analysis
     impact_analysis: str = ""
     dependencies: list[str] = Field(default_factory=list, description="Other resources affected")
-    backup_options: list[str] = Field(default_factory=list, description="Possible remediation options")
+    backup_options: list[str] = Field(
+        default_factory=list, description="Possible remediation options"
+    )
     recommendation: str = ""
     evidence: str = Field(default="", description="Facts supporting the recommendation")
 

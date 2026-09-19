@@ -40,9 +40,13 @@ class Approval(DomainEntity):
     risk_level: RiskLevel = RiskLevel.MEDIUM
 
     # What the agent wants to do
-    requested_action: str = Field(..., description="e.g., SEND_SPEAKER_FOLLOWUP, BOOK_ACCOMMODATION")
+    requested_action: str = Field(
+        ..., description="e.g., SEND_SPEAKER_FOLLOWUP, BOOK_ACCOMMODATION"
+    )
     reason: str = Field(default="", description="Why the agent recommends this action")
-    evidence: dict[str, Any] = Field(default_factory=dict, description="Data supporting the decision")
+    evidence: dict[str, Any] = Field(
+        default_factory=dict, description="Data supporting the decision"
+    )
     affected_resource_type: str = ""
     affected_resource_id: str = ""
 

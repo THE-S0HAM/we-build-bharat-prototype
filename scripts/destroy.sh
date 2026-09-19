@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Destroy OrbitOps AWS resources
+# Destroy CommunityOps AWS resources
 # Usage: ./scripts/destroy.sh --stage dev
 #
 # WARNING: This deletes the CloudFormation stack and ALL associated resources:
@@ -27,9 +27,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-STACK_NAME="orbitops-${STAGE}"
+STACK_NAME="communityops-${STAGE}"
 
-echo "=== OrbitOps Destroy ==="
+echo "=== CommunityOps Destroy ==="
 echo "Stack: $STACK_NAME"
 echo "Region: $REGION"
 echo ""
@@ -53,7 +53,7 @@ if [ -n "$TICKET_BUCKET" ] && [ "$TICKET_BUCKET" != "None" ]; then
     aws s3 rm "s3://${TICKET_BUCKET}" --recursive --region "$REGION" 2>/dev/null || true
 fi
 
-KNOWLEDGE_BUCKET="orbitops-knowledge-${STAGE}-$(aws sts get-caller-identity --query Account --output text)"
+KNOWLEDGE_BUCKET="communityops-knowledge-${STAGE}-$(aws sts get-caller-identity --query Account --output text)"
 aws s3 rm "s3://${KNOWLEDGE_BUCKET}" --recursive --region "$REGION" 2>/dev/null || true
 
 # Delete the stack

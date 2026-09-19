@@ -1,0 +1,19 @@
+# CommunityOps SAM deployment configuration
+# Stack: CommunityOps in ap-south-1
+
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "CommunityOps"
+region = "ap-south-1"
+resolve_s3 = true
+s3_prefix = "CommunityOps"
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+confirm_changeset = false
+parameter_overrides = "Stage=dev"
+
+[default.build.parameters]
+cached = true
+
+[default.validate.parameters]
+lint = true

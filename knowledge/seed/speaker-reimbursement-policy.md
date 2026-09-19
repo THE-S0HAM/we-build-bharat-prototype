@@ -21,7 +21,7 @@
 ## Reimbursement Process
 
 1. Speaker submits receipts within 14 days after the event
-2. OrbitOps reviews receipts against policy
+2. CommunityOps reviews receipts against policy
 3. If within policy: auto-processed
 4. If exceeds policy: flagged for organizer approval
 5. Reimbursement via bank transfer within 21 business days

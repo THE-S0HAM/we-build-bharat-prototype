@@ -5,7 +5,6 @@ Route: GET /events/{eventId}/audit
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any
@@ -13,9 +12,10 @@ from typing import Any
 from services.shared.api_response import error, success
 from services.shared.dynamodb import DynamoDBRepository
 from services.shared.models.base import ErrorCategory
+from services.shared.tenancy import authorize_organization
 
 logger = logging.getLogger(__name__)
-AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "OrbitOps-Audit-dev")
+AUDIT_TABLE = os.environ.get("AUDIT_TABLE", "CommunityOps-Audit-dev")
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -27,6 +27,10 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     if not org_id or not event_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id and eventId are required")
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     limit = min(int(params.get("limit", "50")), 200)
 

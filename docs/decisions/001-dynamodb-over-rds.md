@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-OrbitOps needs a database for operational state: events, registrations, tickets, tasks, speakers, incidents, approvals. The primary access patterns are key-value lookups (get registration by ID, get event by ID) and filtered queries (list pending approvals, list speakers by status).
+CommunityOps needs a database for operational state: events, registrations, tickets, tasks, speakers, incidents, approvals. The primary access patterns are key-value lookups (get registration by ID, get event by ID) and filtered queries (list pending approvals, list speakers by status).
 
 ## Decision
 Use Amazon DynamoDB with on-demand billing.

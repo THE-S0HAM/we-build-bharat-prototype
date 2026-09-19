@@ -6,10 +6,10 @@ Ensures Pydantic models enforce required fields and constraints.
 import pytest
 from pydantic import ValidationError
 
-from services.shared.models.registration import Registration, RegistrationStatus, PaymentStatus
-from services.shared.models.ticket import Ticket
+from services.shared.models.base import AuditEvent, ErrorCategory, ErrorResponse
 from services.shared.models.event import Event, EventStatus
-from services.shared.models.base import ErrorResponse, ErrorCategory, AuditEvent
+from services.shared.models.registration import PaymentStatus, Registration, RegistrationStatus
+from services.shared.models.ticket import Ticket
 
 
 class TestRegistration:

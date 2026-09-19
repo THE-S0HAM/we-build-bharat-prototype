@@ -17,9 +17,10 @@ from services.shared.api_response import error, success
 from services.shared.audit import create_audit_event
 from services.shared.dynamodb import DynamoDBRepository
 from services.shared.models.base import ErrorCategory, utc_now
+from services.shared.tenancy import authorize_organization
 
 logger = logging.getLogger(__name__)
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -57,7 +58,13 @@ def _get_user_id(event: dict[str, Any]) -> str:
 def _list_tasks(event: dict[str, Any], event_id: str, team_id: str) -> dict[str, Any]:
     org_id = _get_org_id(event)
     if not org_id or not event_id or not team_id:
-        return error(ErrorCategory.VALIDATION_ERROR, "organization_id, eventId, and teamId are required")
+        return error(
+            ErrorCategory.VALIDATION_ERROR, "organization_id, eventId, and teamId are required"
+        )
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     repo = DynamoDBRepository(MAIN_TABLE)
     items = repo.query_by_pk(org_id, f"EVENT#{event_id}#TEAM#{team_id}#TASK#", limit=200)
@@ -70,7 +77,13 @@ def _create_task(event: dict[str, Any], event_id: str, team_id: str) -> dict[str
     user_id = _get_user_id(event)
 
     if not org_id or not event_id or not team_id:
-        return error(ErrorCategory.VALIDATION_ERROR, "organization_id, eventId, and teamId are required")
+        return error(
+            ErrorCategory.VALIDATION_ERROR, "organization_id, eventId, and teamId are required"
+        )
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     title = body.get("title", "").strip()
     if not title:
@@ -119,7 +132,9 @@ def _create_task(event: dict[str, Any], event_id: str, team_id: str) -> dict[str
     return success({"task_id": task_id, "message": "Task created"}, status_code=201)
 
 
-def _update_task(event: dict[str, Any], event_id: str, team_id: str, task_id: str) -> dict[str, Any]:
+def _update_task(
+    event: dict[str, Any], event_id: str, team_id: str, task_id: str
+) -> dict[str, Any]:
     body = json.loads(event.get("body", "{}"))
     org_id = body.get("organization_id", "")
     user_id = _get_user_id(event)
@@ -127,14 +142,26 @@ def _update_task(event: dict[str, Any], event_id: str, team_id: str, task_id: st
     if not org_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id is required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     repo = DynamoDBRepository(MAIN_TABLE)
     existing = repo.get_item(org_id, f"EVENT#{event_id}#TEAM#{team_id}#TASK#{task_id}")
     if not existing:
         return error(ErrorCategory.NOT_FOUND, "Task not found")
 
     allowed = [
-        "title", "description", "status", "priority", "assigned_to",
-        "due_date", "depends_on", "blocks", "escalation_level", "notes",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "assigned_to",
+        "due_date",
+        "depends_on",
+        "blocks",
+        "escalation_level",
+        "notes",
     ]
     updates = {k: body[k] for k in allowed if k in body}
     updates["updated_at"] = utc_now().isoformat()

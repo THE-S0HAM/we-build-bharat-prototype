@@ -1,4 +1,4 @@
-// OrbitOps Cedar Policies
+// CommunityOps Cedar Policies
 // Defines what actions agents and users may perform,
 // and which actions require human approval.
 

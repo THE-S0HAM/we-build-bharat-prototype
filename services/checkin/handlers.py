@@ -16,20 +16,23 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 
+from services.checkin.ticket_service import generate_ticket, verify_qr_signature
+from services.checkin.verification import verify_registration
 from services.shared.api_response import error, success
 from services.shared.audit import create_audit_event
-from services.shared.connectors_dynamodb import DynamoDBPaymentConnector, DynamoDBRegistrationConnector
+from services.shared.connectors_dynamodb import (
+    DynamoDBPaymentConnector,
+    DynamoDBRegistrationConnector,
+)
 from services.shared.dynamodb import DynamoDBError, DynamoDBRepository
 from services.shared.models.base import ErrorCategory, utc_now
-from services.checkin.verification import verify_registration
-from services.checkin.ticket_service import generate_ticket, verify_qr_signature
+from services.shared.tenancy import authorize_organization
 
 logger = logging.getLogger(__name__)
 
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
 
 
 def _parse_body(event: dict[str, Any]) -> dict[str, Any]:
@@ -42,11 +45,7 @@ def _parse_body(event: dict[str, Any]) -> dict[str, Any]:
 
 def _get_user_id(event: dict[str, Any]) -> str:
     """Extract user ID from Cognito authorizer context."""
-    claims = (
-        event.get("requestContext", {})
-        .get("authorizer", {})
-        .get("claims", {})
-    )
+    claims = event.get("requestContext", {}).get("authorizer", {}).get("claims", {})
     return claims.get("sub", "anonymous")
 
 
@@ -59,6 +58,7 @@ def _get_path_param(event: dict[str, Any], param: str) -> str:
 # POST /events/{eventId}/checkin/search
 # ---------------------------------------------------------------------------
 
+
 def search_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Search for an attendee registration.
 
@@ -68,31 +68,30 @@ def search_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     body = _parse_body(event)
     event_id = _get_path_param(event, "eventId")
     org_id = body.get("organization_id", "")
-    user_id = _get_user_id(event)
+    _user_id = _get_user_id(event)  # Available for audit logging
 
     if not org_id or not event_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id and eventId are required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     connector = DynamoDBRegistrationConnector()
 
     # Priority: registration_id > email > phone > name
-    search_type = ""
     search_value = ""
 
     if body.get("registration_id"):
-        search_type = "registration_id"
         search_value = body["registration_id"]
         result = connector.lookup_by_id(org_id, event_id, search_value)
     elif body.get("email"):
-        search_type = "email"
         search_value = body["email"]
         result = connector.lookup_by_email(org_id, event_id, search_value)
     elif body.get("phone"):
-        search_type = "phone"
         search_value = body["phone"]
         result = connector.lookup_by_phone(org_id, event_id, search_value)
     elif body.get("name"):
-        search_type = "name"
         search_value = body["name"]
         result = connector.lookup_by_name(org_id, event_id, search_value)
     else:
@@ -108,12 +107,14 @@ def search_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         )
 
     if not result.data:
-        return success({
-            "found": False,
-            "count": 0,
-            "registrations": [],
-            "message": "No matching registration found. You may try a payment reference for reconciliation.",
-        })
+        return success(
+            {
+                "found": False,
+                "count": 0,
+                "registrations": [],
+                "message": "No matching registration found. You may try a payment reference for reconciliation.",
+            }
+        )
 
     # Multiple matches on name search: return candidates, don't auto-select
     if len(result.data) > 1:
@@ -127,20 +128,24 @@ def search_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             }
             for r in result.data
         ]
-        return success({
-            "found": True,
-            "count": len(candidates),
-            "registrations": candidates,
-            "message": "Multiple registrations found. Please provide additional identifying information.",
-            "requires_disambiguation": True,
-        })
+        return success(
+            {
+                "found": True,
+                "count": len(candidates),
+                "registrations": candidates,
+                "message": "Multiple registrations found. Please provide additional identifying information.",
+                "requires_disambiguation": True,
+            }
+        )
 
-    return success({
-        "found": True,
-        "count": 1,
-        "registrations": result.data,
-        "requires_disambiguation": False,
-    })
+    return success(
+        {
+            "found": True,
+            "count": 1,
+            "registrations": result.data,
+            "requires_disambiguation": False,
+        }
+    )
 
 
 def _mask_email(email: str) -> str:
@@ -156,6 +161,7 @@ def _mask_email(email: str) -> str:
 # ---------------------------------------------------------------------------
 # POST /events/{eventId}/checkin/verify
 # ---------------------------------------------------------------------------
+
 
 def verify_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Run deterministic verification checks on a registration.
@@ -174,6 +180,10 @@ def verify_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "organization_id, eventId, and registration_id are required",
         )
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     connector = DynamoDBRegistrationConnector()
     result = connector.lookup_by_id(org_id, event_id, registration_id)
 
@@ -189,21 +199,24 @@ def verify_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     registration = result.data[0]
     verification = verify_registration(registration, event_id)
 
-    return success({
-        "registration_id": registration_id,
-        "verification": verification.to_dict(),
-        "registration": {
-            "attendee_name": registration.get("attendee_name", ""),
-            "ticket_type": registration.get("ticket_type", ""),
-            "status": registration.get("status", ""),
-            "payment_status": registration.get("payment_status", ""),
-        },
-    })
+    return success(
+        {
+            "registration_id": registration_id,
+            "verification": verification.to_dict(),
+            "registration": {
+                "attendee_name": registration.get("attendee_name", ""),
+                "ticket_type": registration.get("ticket_type", ""),
+                "status": registration.get("status", ""),
+                "payment_status": registration.get("payment_status", ""),
+            },
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # POST /events/{eventId}/checkin/recover
 # ---------------------------------------------------------------------------
+
 
 def recover_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Generate/recover a ticket for a verified registration.
@@ -224,6 +237,10 @@ def recover_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "organization_id, eventId, and registration_id are required",
         )
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     repo = DynamoDBRepository(MAIN_TABLE)
 
     # Idempotency check: does a ticket already exist?
@@ -238,7 +255,10 @@ def recover_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         repo.update_item(
             org_id,
             f"EVENT#{event_id}#TICKET#{registration_id}",
-            {"generated_count": existing_ticket.get("generated_count", 1) + 1, "updated_at": utc_now().isoformat()},
+            {
+                "generated_count": existing_ticket.get("generated_count", 1) + 1,
+                "updated_at": utc_now().isoformat(),
+            },
         )
 
         create_audit_event(
@@ -252,13 +272,15 @@ def recover_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             details={"generated_count": existing_ticket.get("generated_count", 1) + 1},
         )
 
-        return success({
-            "ticket_id": registration_id,
-            "registration_id": registration_id,
-            "download_url": download_url,
-            "already_existed": True,
-            "message": "Ticket already exists. A fresh download link has been generated.",
-        })
+        return success(
+            {
+                "ticket_id": registration_id,
+                "registration_id": registration_id,
+                "download_url": download_url,
+                "already_existed": True,
+                "message": "Ticket already exists. A fresh download link has been generated.",
+            }
+        )
 
     # Fetch registration for ticket details
     connector = DynamoDBRegistrationConnector()
@@ -300,6 +322,11 @@ def recover_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "status": "ACTIVE",
             "s3_key": ticket_data["s3_key"],
             "qr_signature": ticket_data["qr_signature"],
+            # The signed payload is retained so the QR can be re-verified
+            # server-side. It carries no PII (registration/event/org IDs and a
+            # timestamp) and forgery is prevented by the HMAC secret, not by
+            # keeping the payload secret.
+            "qr_payload": ticket_data["qr_payload"],
             "generated_count": 1,
             "created_at": utc_now().isoformat(),
             "created_by": user_id,
@@ -319,18 +346,22 @@ def recover_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         details={"s3_key": ticket_data["s3_key"]},
     )
 
-    return success({
-        "ticket_id": registration_id,
-        "registration_id": registration_id,
-        "download_url": ticket_data["download_url"],
-        "already_existed": False,
-        "message": "Ticket generated successfully.",
-    }, status_code=201)
+    return success(
+        {
+            "ticket_id": registration_id,
+            "registration_id": registration_id,
+            "download_url": ticket_data["download_url"],
+            "already_existed": False,
+            "message": "Ticket generated successfully.",
+        },
+        status_code=201,
+    )
 
 
 # ---------------------------------------------------------------------------
 # POST /events/{eventId}/checkin/reconcile
 # ---------------------------------------------------------------------------
+
 
 def reconcile_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Attempt to reconcile check-in via payment reference.
@@ -350,13 +381,19 @@ def reconcile_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "organization_id, eventId, and transaction_id are required",
         )
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     payment_connector = DynamoDBPaymentConnector()
     payment_result = payment_connector.lookup_by_transaction_id(org_id, event_id, transaction_id)
 
     if not payment_result.success:
         # External system unavailable — do NOT say "payment does not exist"
         _create_recovery_case(
-            org_id, event_id, user_id,
+            org_id,
+            event_id,
+            user_id,
             reason="EXTERNAL_SYSTEM_FAILURE",
             search_criteria={"transaction_id": transaction_id},
         )
@@ -367,19 +404,23 @@ def reconcile_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     if not payment_result.data:
         _create_recovery_case(
-            org_id, event_id, user_id,
+            org_id,
+            event_id,
+            user_id,
             reason="NO_MATCH",
             search_criteria={"transaction_id": transaction_id},
         )
-        return success({
-            "reconciled": False,
-            "message": (
-                "No matching payment record was found for this event. "
-                "The booking could not be verified. "
-                "Please contact the event registration team for manual verification."
-            ),
-            "recovery_case_created": True,
-        })
+        return success(
+            {
+                "reconciled": False,
+                "message": (
+                    "No matching payment record was found for this event. "
+                    "The booking could not be verified. "
+                    "Please contact the event registration team for manual verification."
+                ),
+                "recovery_case_created": True,
+            }
+        )
 
     payment = payment_result.data[0]
     linked_reg_id = payment.get("registration_id", "")
@@ -388,30 +429,38 @@ def reconcile_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     # Verify payment is actually captured/valid
     if payment_status not in ("CAPTURED", "NOT_REQUIRED"):
         _create_recovery_case(
-            org_id, event_id, user_id,
+            org_id,
+            event_id,
+            user_id,
             reason="AMBIGUOUS_PAYMENT",
             search_criteria={"transaction_id": transaction_id},
             payment_reference=transaction_id,
         )
-        return success({
-            "reconciled": False,
-            "message": f"Payment found but status is {payment_status}. A recovery case has been created.",
-            "recovery_case_created": True,
-        })
+        return success(
+            {
+                "reconciled": False,
+                "message": f"Payment found but status is {payment_status}. A recovery case has been created.",
+                "recovery_case_created": True,
+            }
+        )
 
     if not linked_reg_id:
         # Payment exists but not linked to a registration
         _create_recovery_case(
-            org_id, event_id, user_id,
+            org_id,
+            event_id,
+            user_id,
             reason="AMBIGUOUS_PAYMENT",
             search_criteria={"transaction_id": transaction_id},
             payment_reference=transaction_id,
         )
-        return success({
-            "reconciled": False,
-            "message": "Payment found but could not be confidently linked to a registration. A recovery case has been created.",
-            "recovery_case_created": True,
-        })
+        return success(
+            {
+                "reconciled": False,
+                "message": "Payment found but could not be confidently linked to a registration. A recovery case has been created.",
+                "recovery_case_created": True,
+            }
+        )
 
     # Payment linked to a registration — verify the registration
     reg_connector = DynamoDBRegistrationConnector()
@@ -419,17 +468,21 @@ def reconcile_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     if not reg_result.success or not reg_result.data:
         _create_recovery_case(
-            org_id, event_id, user_id,
+            org_id,
+            event_id,
+            user_id,
             reason="AMBIGUOUS_PAYMENT",
             search_criteria={"transaction_id": transaction_id},
             payment_reference=transaction_id,
             matched_candidates=[linked_reg_id],
         )
-        return success({
-            "reconciled": False,
-            "message": "Payment found and linked to a registration, but the registration could not be verified.",
-            "recovery_case_created": True,
-        })
+        return success(
+            {
+                "reconciled": False,
+                "message": "Payment found and linked to a registration, but the registration could not be verified.",
+                "recovery_case_created": True,
+            }
+        )
 
     # Successfully reconciled
     registration = reg_result.data[0]
@@ -448,16 +501,18 @@ def reconcile_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         },
     )
 
-    return success({
-        "reconciled": True,
-        "registration_id": linked_reg_id,
-        "registration": {
-            "attendee_name": registration.get("attendee_name", ""),
-            "status": registration.get("status", ""),
-            "payment_status": registration.get("payment_status", ""),
-        },
-        "message": "Payment reconciled with registration. Proceed to verification and ticket recovery.",
-    })
+    return success(
+        {
+            "reconciled": True,
+            "registration_id": linked_reg_id,
+            "registration": {
+                "attendee_name": registration.get("attendee_name", ""),
+                "status": registration.get("status", ""),
+                "payment_status": registration.get("payment_status", ""),
+            },
+            "message": "Payment reconciled with registration. Proceed to verification and ticket recovery.",
+        }
+    )
 
 
 def _create_recovery_case(
@@ -510,6 +565,7 @@ def _create_recovery_case(
 # POST /events/{eventId}/checkin/complete
 # ---------------------------------------------------------------------------
 
+
 def complete_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Mark an attendee as checked in.
 
@@ -527,6 +583,10 @@ def complete_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             ErrorCategory.VALIDATION_ERROR,
             "organization_id, eventId, and registration_id are required",
         )
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     repo = DynamoDBRepository(MAIN_TABLE)
     now = utc_now()
@@ -573,28 +633,34 @@ def complete_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             details={"method": "RECOVERY"},
         )
 
-        return success({
-            "registration_id": registration_id,
-            "status": "CHECKED_IN",
-            "checked_in_at": now.isoformat(),
-            "message": "Check-in completed successfully.",
-            "was_already_checked_in": False,
-        }, status_code=201)
+        return success(
+            {
+                "registration_id": registration_id,
+                "status": "CHECKED_IN",
+                "checked_in_at": now.isoformat(),
+                "message": "Check-in completed successfully.",
+                "was_already_checked_in": False,
+            },
+            status_code=201,
+        )
     else:
         # Already checked in — return existing data
         existing = repo.get_item(org_id, f"EVENT#{event_id}#CHECKIN#{registration_id}")
-        return success({
-            "registration_id": registration_id,
-            "status": "CHECKED_IN",
-            "checked_in_at": existing.get("checked_in_at", "") if existing else "",
-            "message": "Attendee was already checked in.",
-            "was_already_checked_in": True,
-        })
+        return success(
+            {
+                "registration_id": registration_id,
+                "status": "CHECKED_IN",
+                "checked_in_at": existing.get("checked_in_at", "") if existing else "",
+                "message": "Attendee was already checked in.",
+                "was_already_checked_in": True,
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
 # POST /events/{eventId}/checkin/verify-qr
 # ---------------------------------------------------------------------------
+
 
 def verify_qr_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Verify a QR code scanned at the venue.
@@ -608,7 +674,13 @@ def verify_qr_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     qr_payload = body.get("qr_payload", "")
 
     if not all([org_id, event_id, qr_payload]):
-        return error(ErrorCategory.VALIDATION_ERROR, "organization_id, eventId, and qr_payload are required")
+        return error(
+            ErrorCategory.VALIDATION_ERROR, "organization_id, eventId, and qr_payload are required"
+        )
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     try:
         payload_data = json.loads(qr_payload)
@@ -636,10 +708,12 @@ def verify_qr_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if not verify_qr_signature(qr_payload, stored_signature):
         return error(ErrorCategory.FORBIDDEN, "QR verification failed — signature mismatch")
 
-    return success({
-        "valid": True,
-        "registration_id": registration_id,
-        "attendee_name": ticket.get("attendee_name", ""),
-        "ticket_status": ticket.get("status", ""),
-        "message": "QR code verified successfully.",
-    })
+    return success(
+        {
+            "valid": True,
+            "registration_id": registration_id,
+            "attendee_name": ticket.get("attendee_name", ""),
+            "ticket_status": ticket.get("status", ""),
+            "message": "QR code verified successfully.",
+        }
+    )

@@ -7,7 +7,6 @@ invite, check response, policy check, send follow-up, extract data, etc.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import uuid
@@ -18,7 +17,7 @@ from services.shared.dynamodb import DynamoDBRepository
 from services.shared.models.base import utc_now
 
 logger = logging.getLogger(__name__)
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -110,7 +109,9 @@ def _check_followup_policy(event: dict, org_id: str, event_id: str, speaker_id: 
 
     return {
         "requires_approval": requires_approval,
-        "reason": "Follow-up count exceeds auto-send threshold" if requires_approval else "Within auto-send limit",
+        "reason": "Follow-up count exceeds auto-send threshold"
+        if requires_approval
+        else "Within auto-send limit",
     }
 
 
@@ -187,7 +188,13 @@ def _update_speaker(event: dict, org_id: str, event_id: str, speaker_id: str) ->
     }
 
     # Merge extracted fields if present
-    for field in ["topic", "travel_required", "accommodation_required", "special_requirements", "availability_notes"]:
+    for field in [
+        "topic",
+        "travel_required",
+        "accommodation_required",
+        "special_requirements",
+        "availability_notes",
+    ]:
         if field in extracted and extracted[field]:
             updates[field] = extracted[field]
 

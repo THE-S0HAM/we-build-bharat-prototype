@@ -12,6 +12,9 @@ build/
 .aws-sam/
 cdk.out/
 *.js.map
+*.tsbuildinfo
+packaged.yaml
+*.egg-info/
 
 # Environment and secrets
 .env
@@ -38,7 +41,8 @@ htmlcov/
 .nyc_output/
 
 # SAM
-samconfig.toml
+# samconfig.toml is tracked: it pins the stack name, region and capabilities so
+# `sam deploy` is reproducible. It contains no account-specific secrets.
 
 # Logs
 *.log

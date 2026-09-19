@@ -5,10 +5,7 @@ pipeline. No mocking of external services needed — verification
 operates on a registration dict and produces structured results.
 """
 
-import pytest
-
 from services.checkin.verification import (
-    VerificationResult,
     VerificationStatus,
     verify_registration,
 )

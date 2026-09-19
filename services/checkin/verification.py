@@ -76,142 +76,182 @@ def verify_registration(registration: dict[str, Any], event_id: str) -> Verifica
 
     # Check 1: Registration exists
     if not registration:
-        result.checks.append(VerificationCheck(
-            name="registration_exists",
-            status=VerificationStatus.FAIL,
-            message="No registration record provided",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="registration_exists",
+                status=VerificationStatus.FAIL,
+                message="No registration record provided",
+            )
+        )
         return result
 
-    result.checks.append(VerificationCheck(
-        name="registration_exists",
-        status=VerificationStatus.PASS,
-        message="Registration record found",
-    ))
+    result.checks.append(
+        VerificationCheck(
+            name="registration_exists",
+            status=VerificationStatus.PASS,
+            message="Registration record found",
+        )
+    )
 
     # Check 2: Belongs to correct event
     reg_event = registration.get("event_id", "")
     if reg_event != event_id:
-        result.checks.append(VerificationCheck(
-            name="event_match",
-            status=VerificationStatus.FAIL,
-            message=f"Registration belongs to event {reg_event}, not {event_id}",
-            details={"expected_event": event_id, "actual_event": reg_event},
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="event_match",
+                status=VerificationStatus.FAIL,
+                message=f"Registration belongs to event {reg_event}, not {event_id}",
+                details={"expected_event": event_id, "actual_event": reg_event},
+            )
+        )
     else:
-        result.checks.append(VerificationCheck(
-            name="event_match",
-            status=VerificationStatus.PASS,
-            message="Registration belongs to the correct event",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="event_match",
+                status=VerificationStatus.PASS,
+                message="Registration belongs to the correct event",
+            )
+        )
 
     # Check 3: Status is valid
     status = registration.get("status", "")
     if status == "CONFIRMED":
-        result.checks.append(VerificationCheck(
-            name="registration_status",
-            status=VerificationStatus.PASS,
-            message="Registration is confirmed",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="registration_status",
+                status=VerificationStatus.PASS,
+                message="Registration is confirmed",
+            )
+        )
     elif status == "CANCELLED":
-        result.checks.append(VerificationCheck(
-            name="registration_status",
-            status=VerificationStatus.FAIL,
-            message="Registration has been cancelled",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="registration_status",
+                status=VerificationStatus.FAIL,
+                message="Registration has been cancelled",
+            )
+        )
     elif status == "WAITLISTED":
-        result.checks.append(VerificationCheck(
-            name="registration_status",
-            status=VerificationStatus.FAIL,
-            message="Registration is still waitlisted — not confirmed for entry",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="registration_status",
+                status=VerificationStatus.FAIL,
+                message="Registration is still waitlisted — not confirmed for entry",
+            )
+        )
     elif status == "PENDING":
-        result.checks.append(VerificationCheck(
-            name="registration_status",
-            status=VerificationStatus.FAIL,
-            message="Registration is pending — not yet confirmed",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="registration_status",
+                status=VerificationStatus.FAIL,
+                message="Registration is pending — not yet confirmed",
+            )
+        )
     else:
-        result.checks.append(VerificationCheck(
-            name="registration_status",
-            status=VerificationStatus.FAIL,
-            message=f"Unrecognized registration status: {status}",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="registration_status",
+                status=VerificationStatus.FAIL,
+                message=f"Unrecognized registration status: {status}",
+            )
+        )
 
     # Check 4: Payment is valid
     payment_status = registration.get("payment_status", "")
     if payment_status in ("CAPTURED", "NOT_REQUIRED"):
-        result.checks.append(VerificationCheck(
-            name="payment_status",
-            status=VerificationStatus.PASS,
-            message=f"Payment status: {payment_status}",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="payment_status",
+                status=VerificationStatus.PASS,
+                message=f"Payment status: {payment_status}",
+            )
+        )
     elif payment_status == "REFUNDED":
-        result.checks.append(VerificationCheck(
-            name="payment_status",
-            status=VerificationStatus.FAIL,
-            message="Payment has been refunded — attendee is not eligible",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="payment_status",
+                status=VerificationStatus.FAIL,
+                message="Payment has been refunded — attendee is not eligible",
+            )
+        )
     elif payment_status == "PENDING":
-        result.checks.append(VerificationCheck(
-            name="payment_status",
-            status=VerificationStatus.FAIL,
-            message="Payment is still pending",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="payment_status",
+                status=VerificationStatus.FAIL,
+                message="Payment is still pending",
+            )
+        )
     elif payment_status == "FAILED":
-        result.checks.append(VerificationCheck(
-            name="payment_status",
-            status=VerificationStatus.FAIL,
-            message="Payment failed",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="payment_status",
+                status=VerificationStatus.FAIL,
+                message="Payment failed",
+            )
+        )
     else:
-        result.checks.append(VerificationCheck(
-            name="payment_status",
-            status=VerificationStatus.FAIL,
-            message=f"Unrecognized payment status: {payment_status}",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="payment_status",
+                status=VerificationStatus.FAIL,
+                message=f"Unrecognized payment status: {payment_status}",
+            )
+        )
 
     # Check 5: Not cancelled (redundant with status check but explicit)
     if status == "CANCELLED":
-        result.checks.append(VerificationCheck(
-            name="not_cancelled",
-            status=VerificationStatus.FAIL,
-            message="Attendee registration is cancelled",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="not_cancelled",
+                status=VerificationStatus.FAIL,
+                message="Attendee registration is cancelled",
+            )
+        )
     else:
-        result.checks.append(VerificationCheck(
-            name="not_cancelled",
-            status=VerificationStatus.PASS,
-            message="Registration is not cancelled",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="not_cancelled",
+                status=VerificationStatus.PASS,
+                message="Registration is not cancelled",
+            )
+        )
 
     # Check 6: Not refunded
     if payment_status == "REFUNDED":
-        result.checks.append(VerificationCheck(
-            name="not_refunded",
-            status=VerificationStatus.FAIL,
-            message="Payment has been refunded",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="not_refunded",
+                status=VerificationStatus.FAIL,
+                message="Payment has been refunded",
+            )
+        )
     else:
-        result.checks.append(VerificationCheck(
-            name="not_refunded",
-            status=VerificationStatus.PASS,
-            message="No refund recorded",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="not_refunded",
+                status=VerificationStatus.PASS,
+                message="No refund recorded",
+            )
+        )
 
     # Check 7: Check-in eligibility (already checked in is a warning, not a failure)
     is_checked_in = registration.get("is_checked_in", False)
     if is_checked_in:
-        result.checks.append(VerificationCheck(
-            name="checkin_eligibility",
-            status=VerificationStatus.WARN,
-            message="Attendee has already checked in",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="checkin_eligibility",
+                status=VerificationStatus.WARN,
+                message="Attendee has already checked in",
+            )
+        )
     else:
-        result.checks.append(VerificationCheck(
-            name="checkin_eligibility",
-            status=VerificationStatus.PASS,
-            message="Attendee is eligible for check-in",
-        ))
+        result.checks.append(
+            VerificationCheck(
+                name="checkin_eligibility",
+                status=VerificationStatus.PASS,
+                message="Attendee is eligible for check-in",
+            )
+        )
 
     return result

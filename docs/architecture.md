@@ -1,8 +1,8 @@
-# OrbitOps Architecture
+# CommunityOps Architecture
 
 ## Overview
 
-OrbitOps is an AI Community Operations Agent built on AWS-native serverless services. It coordinates event operations for community organizers by automating repetitive work while keeping consequential decisions under human control.
+CommunityOps is an AI Community Operations Agent built on AWS-native serverless services. It coordinates event operations for community organizers by automating repetitive work while keeping consequential decisions under human control.
 
 ## Fundamental Principles
 

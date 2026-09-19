@@ -2,7 +2,7 @@
 
 ## Overview
 
-OrbitOps uses a multi-layer agent system built on Strands Agents SDK with Amazon Bedrock. The architecture separates deterministic operations (lookups, verification, ticket generation) from AI reasoning (intent understanding, recommendation, natural language).
+CommunityOps uses a multi-layer agent system built on Strands Agents SDK with Amazon Bedrock. The architecture separates deterministic operations (lookups, verification, ticket generation) from AI reasoning (intent understanding, recommendation, natural language).
 
 ## Agent Hierarchy
 

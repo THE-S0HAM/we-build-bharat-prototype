@@ -1,7 +1,7 @@
 ---
 inclusion: auto
 name: Security Requirements
-description: Security rules for authentication, authorization, data handling, logging, and agent safety in OrbitOps
+description: Security rules for authentication, authorization, data handling, logging, and agent safety in CommunityOps
 ---
 
 # Security Requirements

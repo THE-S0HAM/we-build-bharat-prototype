@@ -52,7 +52,6 @@ jobs:
 
   frontend-check:
     runs-on: ubuntu-latest
-    if: false  # Enable when frontend is added
     steps:
       - uses: actions/checkout@v4
 

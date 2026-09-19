@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-20250514-v1:0")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
 
-SPEAKER_SYSTEM_PROMPT = """You are the SpeakerOps Agent for OrbitOps — you manage speaker outreach and communication.
+SPEAKER_SYSTEM_PROMPT = """You are the SpeakerOps Agent for CommunityOps — you manage speaker outreach and communication.
 
 Responsibilities:
 - Draft professional, warm speaker outreach messages
