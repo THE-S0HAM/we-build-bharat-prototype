@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-20250514-v1:0")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
 
-SUPERVISOR_SYSTEM_PROMPT = """You are the OrbitOps Supervisor Agent — an AI operations coordinator for community-led events.
+SUPERVISOR_SYSTEM_PROMPT = """You are the CommunityOps Supervisor Agent — an AI operations coordinator for community-led events.
 
 Your role:
 1. Understand the operational intent from the user's message

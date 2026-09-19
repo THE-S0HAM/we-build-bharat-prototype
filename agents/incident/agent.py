@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-20250514-v1:0")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
 
-INCIDENT_SYSTEM_PROMPT = """You are the IncidentOps Agent for OrbitOps — you detect, analyze, and help resolve operational incidents during events.
+INCIDENT_SYSTEM_PROMPT = """You are the IncidentOps Agent for CommunityOps — you detect, analyze, and help resolve operational incidents during events.
 
 Your workflow:
 1. Detect or receive an incident report

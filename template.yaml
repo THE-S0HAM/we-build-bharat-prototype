@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  OrbitOps - CommunityOps Agent
+  CommunityOps Agent
   AI operations layer for community-led events
 
 Parameters:
@@ -30,7 +30,7 @@ Globals:
         EVENT_BUS_NAME: !Ref EventBus
         BEDROCK_MODEL_ID: !Ref BedrockModelId
         BEDROCK_REGION: !Ref BedrockRegion
-        POWERTOOLS_SERVICE_NAME: orbitops
+        POWERTOOLS_SERVICE_NAME: communityops
         LOG_LEVEL: INFO
     Architectures:
       - x86_64
@@ -44,7 +44,7 @@ Resources:
   UserPool:
     Type: AWS::Cognito::UserPool
     Properties:
-      UserPoolName: !Sub OrbitOps-UserPool-${Stage}
+      UserPoolName: !Sub CommunityOps-UserPool-${Stage}
       AutoVerifiedAttributes:
         - email
       UsernameAttributes:
@@ -69,7 +69,7 @@ Resources:
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
-      ClientName: !Sub OrbitOps-WebClient-${Stage}
+      ClientName: !Sub CommunityOps-WebClient-${Stage}
       UserPoolId: !Ref UserPool
       ExplicitAuthFlows:
         - ALLOW_USER_SRP_AUTH
@@ -85,7 +85,7 @@ Resources:
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
-      Name: !Sub OrbitOps-API-${Stage}
+      Name: !Sub CommunityOps-API-${Stage}
       StageName: !Ref Stage
       Cors:
         AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
@@ -104,7 +104,7 @@ Resources:
   MainTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub OrbitOps-Main-${Stage}
+      TableName: !Sub CommunityOps-Main-${Stage}
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: PK
@@ -135,7 +135,7 @@ Resources:
   AuditTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub OrbitOps-Audit-${Stage}
+      TableName: !Sub CommunityOps-Audit-${Stage}
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: PK
@@ -170,7 +170,7 @@ Resources:
   TicketBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub orbitops-tickets-${Stage}-${AWS::AccountId}
+      BucketName: !Sub communityops-tickets-${Stage}-${AWS::AccountId}
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -190,7 +190,7 @@ Resources:
   KnowledgeBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub orbitops-knowledge-${Stage}-${AWS::AccountId}
+      BucketName: !Sub communityops-knowledge-${Stage}-${AWS::AccountId}
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -204,7 +204,7 @@ Resources:
   EventBus:
     Type: AWS::Events::EventBus
     Properties:
-      Name: !Sub OrbitOps-EventBus-${Stage}
+      Name: !Sub CommunityOps-EventBus-${Stage}
 
   # ===================================================================
   # Lambda Functions - Check-In
@@ -213,7 +213,7 @@ Resources:
   CheckinSearchFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-checkin-search-${Stage}
+      FunctionName: !Sub communityops-checkin-search-${Stage}
       Handler: services.checkin.handlers.search_handler
       CodeUri: .
       Policies:
@@ -230,7 +230,7 @@ Resources:
   CheckinVerifyFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-checkin-verify-${Stage}
+      FunctionName: !Sub communityops-checkin-verify-${Stage}
       Handler: services.checkin.handlers.verify_handler
       CodeUri: .
       Policies:
@@ -247,7 +247,7 @@ Resources:
   CheckinRecoverFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-checkin-recover-${Stage}
+      FunctionName: !Sub communityops-checkin-recover-${Stage}
       Handler: services.checkin.handlers.recover_handler
       CodeUri: .
       Timeout: 60
@@ -272,7 +272,7 @@ Resources:
   CheckinReconcileFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-checkin-reconcile-${Stage}
+      FunctionName: !Sub communityops-checkin-reconcile-${Stage}
       Handler: services.checkin.handlers.reconcile_handler
       CodeUri: .
       Policies:
@@ -293,7 +293,7 @@ Resources:
   CheckinCompleteFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-checkin-complete-${Stage}
+      FunctionName: !Sub communityops-checkin-complete-${Stage}
       Handler: services.checkin.handlers.complete_handler
       CodeUri: .
       Policies:
@@ -314,7 +314,7 @@ Resources:
   CheckinVerifyQrFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-checkin-verify-qr-${Stage}
+      FunctionName: !Sub communityops-checkin-verify-qr-${Stage}
       Handler: services.checkin.handlers.verify_qr_handler
       CodeUri: .
       Policies:
@@ -335,7 +335,7 @@ Resources:
   EventsCrudFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-api-events-${Stage}
+      FunctionName: !Sub communityops-api-events-${Stage}
       Handler: services.api.events_handler.handler
       CodeUri: .
       Policies:
@@ -374,7 +374,7 @@ Resources:
   SpeakersCrudFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-api-speakers-${Stage}
+      FunctionName: !Sub communityops-api-speakers-${Stage}
       Handler: services.api.speakers_handler.handler
       CodeUri: .
       Policies:
@@ -407,7 +407,7 @@ Resources:
   TasksCrudFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-api-tasks-${Stage}
+      FunctionName: !Sub communityops-api-tasks-${Stage}
       Handler: services.api.tasks_handler.handler
       CodeUri: .
       Policies:
@@ -440,7 +440,7 @@ Resources:
   ApprovalsCrudFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-api-approvals-${Stage}
+      FunctionName: !Sub communityops-api-approvals-${Stage}
       Handler: services.api.approvals_handler.handler
       CodeUri: .
       Policies:
@@ -467,7 +467,7 @@ Resources:
   IncidentsCrudFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-api-incidents-${Stage}
+      FunctionName: !Sub communityops-api-incidents-${Stage}
       Handler: services.api.incidents_handler.handler
       CodeUri: .
       Policies:
@@ -500,7 +500,7 @@ Resources:
   AuditLogFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-api-audit-${Stage}
+      FunctionName: !Sub communityops-api-audit-${Stage}
       Handler: services.api.audit_handler.handler
       CodeUri: .
       Policies:
@@ -517,7 +517,7 @@ Resources:
   CommandCenterFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-api-command-center-${Stage}
+      FunctionName: !Sub communityops-api-command-center-${Stage}
       Handler: services.api.command_center_handler.handler
       CodeUri: .
       Policies:
@@ -540,7 +540,7 @@ Resources:
   SpeakerFollowupStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
-      Name: !Sub OrbitOps-SpeakerFollowup-${Stage}
+      Name: !Sub CommunityOps-SpeakerFollowup-${Stage}
       DefinitionUri: workflows/speaker-followup/definition.asl.json
       DefinitionSubstitutions:
         SpeakerFollowupFunctionArn: !GetAtt SpeakerFollowupFunction.Arn
@@ -551,7 +551,7 @@ Resources:
   SpeakerFollowupFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-workflow-speaker-followup-${Stage}
+      FunctionName: !Sub communityops-workflow-speaker-followup-${Stage}
       Handler: services.workflows.speaker_followup.handler
       CodeUri: .
       Timeout: 120
@@ -570,7 +570,7 @@ Resources:
   IncidentResponseStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
-      Name: !Sub OrbitOps-IncidentResponse-${Stage}
+      Name: !Sub CommunityOps-IncidentResponse-${Stage}
       DefinitionUri: workflows/incident-response/definition.asl.json
       DefinitionSubstitutions:
         IncidentResponseFunctionArn: !GetAtt IncidentResponseFunction.Arn
@@ -581,7 +581,7 @@ Resources:
   IncidentResponseFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub orbitops-workflow-incident-response-${Stage}
+      FunctionName: !Sub communityops-workflow-incident-response-${Stage}
       Handler: services.workflows.incident_response.handler
       CodeUri: .
       Timeout: 120

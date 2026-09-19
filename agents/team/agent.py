@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-20250514-v1:0")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
 
-TEAM_SYSTEM_PROMPT = """You are the TeamOps Agent for OrbitOps — you help organize and coordinate team operations for events.
+TEAM_SYSTEM_PROMPT = """You are the TeamOps Agent for CommunityOps — you help organize and coordinate team operations for events.
 
 Responsibilities:
 - Break down event operations into actionable tasks for teams

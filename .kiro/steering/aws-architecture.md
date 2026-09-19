@@ -1,7 +1,7 @@
 ---
 inclusion: auto
 name: AWS Architecture Guidelines
-description: Guidelines for AWS service usage, SAM templates, Lambda handlers, DynamoDB table design, and infrastructure decisions in OrbitOps
+description: Guidelines for AWS service usage, SAM templates, Lambda handlers, DynamoDB table design, and infrastructure decisions in CommunityOps
 ---
 
 # AWS Architecture Guidelines

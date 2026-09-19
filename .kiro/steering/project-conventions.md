@@ -1,7 +1,7 @@
-# OrbitOps Project Conventions
+# CommunityOps Project Conventions
 
 ## Product Identity
-- Product: **CommunityOps Agent** (working name: **OrbitOps**)
+- Product: **CommunityOps Agent**
 - Mission: AI Community Operations Agent that automates repetitive operational work for community organizers while keeping consequential decisions under human control.
 
 ## Fundamental Principles
@@ -41,8 +41,8 @@
 - Python functions/variables: snake_case
 - TypeScript functions/variables: camelCase
 - API routes: kebab-case (/check-in/recovery)
-- DynamoDB tables: PascalCase prefix (OrbitOps-{Entity}-{Stage})
-- Lambda functions: orbitops-{service}-{action}-{stage}
+- DynamoDB tables: PascalCase prefix (CommunityOps-{Entity}-{Stage})
+- Lambda functions: communityops-{service}-{action}-{stage}
 - Event types: PascalCase (RegistrationCreated, TicketRecovered)
 
 ## Error Categories

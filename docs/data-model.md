@@ -1,11 +1,11 @@
-# OrbitOps Data Model
+# CommunityOps Data Model
 
 ## DynamoDB Table Design
 
-OrbitOps uses two DynamoDB tables:
+CommunityOps uses two DynamoDB tables:
 
-1. **Main Table** (`OrbitOps-Main-{Stage}`) — all operational entities
-2. **Audit Table** (`OrbitOps-Audit-{Stage}`) — immutable audit log
+1. **Main Table** (`CommunityOps-Main-{Stage}`) — all operational entities
+2. **Audit Table** (`CommunityOps-Audit-{Stage}`) — immutable audit log
 
 Both use on-demand billing (pay-per-request) for MVP cost efficiency.
 

@@ -7,7 +7,7 @@ Do not open a public issue. Contact the maintainers directly.
 
 ## Security Architecture
 
-OrbitOps follows these security principles:
+CommunityOps follows these security principles:
 
 - **Authentication**: Amazon Cognito for all user authentication
 - **Authorization**: Cedar policy engine for fine-grained access control

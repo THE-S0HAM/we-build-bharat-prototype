@@ -10,9 +10,7 @@ It never allows the agent to write or modify registration data.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from typing import Any
 
 from services.shared.connectors_dynamodb import DynamoDBRegistrationConnector
@@ -52,7 +50,9 @@ def registration_lookup_tool(
 
     method = lookup_methods.get(search_type)
     if not method:
-        return {"error": f"Invalid search_type: {search_type}. Use: registration_id, email, phone, name"}
+        return {
+            "error": f"Invalid search_type: {search_type}. Use: registration_id, email, phone, name"
+        }
 
     result = method(organization_id, event_id, search_value)
 
