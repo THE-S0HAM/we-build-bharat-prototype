@@ -244,6 +244,13 @@ Resources:
           - Id: ExpireOldTickets
             Status: Enabled
             ExpirationInDays: 90
+          # Parts of a multipart upload that never completed are billed as storage
+          # indefinitely and do not appear in an object listing, so nothing reveals them
+          # except the bill. Every bucket here gets this rule.
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
 
   # ===================================================================
   # Static hosting for the operations console
@@ -264,6 +271,12 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
 
   WebOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
@@ -326,7 +339,16 @@ Resources:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebDistribution}
 
-  # Knowledge bucket for RAG seed documents
+  # Storage for reference documents an organiser uploads.
+  #
+  # Nothing reads this bucket. No function carries it in its environment and no code
+  # references it. It is left over from an abandoned retrieval plan, and its previous
+  # comment described it as holding "RAG seed documents" — misleading, because document
+  # contents are not indexed anywhere in this system and the agent can locate a document
+  # but cannot tell you what is inside it.
+  #
+  # Kept rather than deleted: an empty bucket has no recurring charge, so removing it
+  # saves nothing, while deleting a bucket is irreversible.
   KnowledgeBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -336,6 +358,16 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
 
   # ===================================================================
   # EventBridge
