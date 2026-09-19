@@ -1,0 +1,51 @@
+/* ============================================================================
+ * PageHeader — the page title zone. Owning it in one place is what makes the
+ * title baseline and the header rhythm identical on every route
+ * (requirements 12.4, 12.11, design.md §15.1).
+ *
+ * Every value here comes from `src/styles/tokens.css`. Outer spacing is
+ * deliberately absent: the gap between the header and the first section is the
+ * AppShell content column's rhythm, not this component's margin.
+ * ==========================================================================*/
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  /* Below the narrow breakpoints the action drops under the title rather than
+     squeezing it (requirement 14.7). */
+  flex-wrap: wrap;
+}
+
+.page-header__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  /* Lets a long title wrap instead of widening the row. */
+  min-width: 0;
+}
+
+.page-header__title {
+  font-size: var(--fs-page-title);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+  letter-spacing: var(--ls-display);
+}
+
+.page-header__context {
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+}
+
+/* One slot, so a page cannot grow a second primary action
+   (requirement 12.11). The control height keeps the action optically level
+   with the title rather than with the block's top edge. */
+.page-header__action {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-height: var(--control-h);
+}

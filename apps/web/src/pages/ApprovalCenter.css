@@ -1,0 +1,58 @@
+/* ============================================================================
+ * Approvals — page layout only.
+ *
+ * Every value is a token from `src/styles/tokens.css` (requirement 12.1,
+ * design.md §6.3). No hex colour, no raw pixel size, no inline style.
+ *
+ * The decision surface itself lives in `src/approvals/ApprovalCard.css` and
+ * `src/approvals/ApprovalActions.css`; the session strip in
+ * `src/approvals/RecentlyDecided.css`. This file owns the page's vertical
+ * rhythm, the loading shape and the live region, and nothing else. Nothing here
+ * maps a status or a risk level to a colour — `StatusBadge` and `RiskIndicator`
+ * are the only components allowed to (requirement 12.5).
+ * ==========================================================================*/
+
+/* The page's vertical rhythm is the shared `.page` class's, applied alongside
+   `.approvals` in the page (requirement 12.4). The queue below keeps its own
+   tighter gap: that is the rhythm *between decisions*, not between regions. */
+
+/**
+ * The live region. Announced, never shown: the card already says what happened
+ * in its own words, so a visible second copy would be the same news twice.
+ *
+ * `--border-w` is the product hairline and is used here to keep the element in
+ * the accessibility tree without a raw pixel literal — the same technique as
+ * `.skeleton-region__label`.
+ */
+.approvals__announcement {
+  position: absolute;
+  width: var(--border-w);
+  height: var(--border-w);
+  margin: calc(-1 * var(--border-w));
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.approvals__queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+/* --- Loading -------------------------------------------------------------- */
+
+.approvals__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+/* The shape of an `ApprovalCard`, holding its rhythm while the queue loads. */
+.approvals__skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}

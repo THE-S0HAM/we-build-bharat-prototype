@@ -1,0 +1,151 @@
+/* ============================================================================
+ * Timeline — chronological event list (requirement 12.4, design.md §7, §8.8).
+ *
+ * Every value comes from `src/styles/tokens.css`. No hex colour, no raw size.
+ * The only literal number is the `--bp-md` breakpoint, because CSS media
+ * queries cannot read custom properties (same constraint as `index.css`).
+ *
+ * Density is the point on the Audit Log: entries are separated by a hairline
+ * rule and the spacing scale, not by cards.
+ * ==========================================================================*/
+
+/* One block on the single-column grid, carrying the shared section rhythm. */
+.timeline {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  margin-block-end: var(--sp-6);
+}
+
+.timeline:last-child {
+  margin-block-end: 0;
+}
+
+/* Three columns on one grid so time, narrative and outcome line up down the
+   whole list: relative time | entry body | outcome slot. */
+.timeline__entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--sp-3);
+  align-items: start;
+  padding-block: var(--sp-3);
+  border-block-end: var(--border-w) solid var(--border);
+}
+
+.timeline__entry:last-child {
+  padding-block-end: 0;
+  border-block-end: 0;
+}
+
+/* Fixed measure, mono digits: the time column is a ruler, so it must not shift
+   width from one entry to the next. */
+.timeline__time {
+  inline-size: calc(var(--sp-16) * 2);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+  white-space: nowrap;
+  /* Relative time is the default reading; `title` carries the exact value, and
+     the dotted underline is the standard hint that one is available. */
+  text-decoration: underline dotted var(--border-strong);
+  text-underline-offset: var(--sp-1);
+  cursor: help;
+}
+
+.timeline__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-inline-size: 0;
+}
+
+.timeline__action {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.timeline__attribution {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+/* Attribution, not status: the label is always present, so the tint only
+   reinforces what the text already says (requirement 15.10). */
+.timeline__actor-kind {
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--sp-2);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  white-space: nowrap;
+}
+
+/* CommunityOps speaks in the brand voice; people and the system stay neutral,
+   so an agent action is distinguishable at a glance and by label. */
+.timeline__actor-kind[data-kind="agent"] {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.timeline__actor-kind[data-kind="person"] {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.timeline__actor-kind[data-kind="system"] {
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+
+/* Identifiers read as identifiers. `overflow-wrap` keeps a long one inside the
+   grid column instead of widening the page. */
+.timeline__actor-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.timeline__detail {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+.timeline__status {
+  justify-self: end;
+}
+
+.timeline-empty {
+  padding-block: var(--sp-6);
+  margin-block-end: var(--sp-6);
+}
+
+.timeline-empty:last-child {
+  margin-block-end: 0;
+}
+
+/* Responsive — below --bp-md (900px). The ruler column becomes the entry's
+   first line, so the narrative keeps the full width. */
+@media (max-width: 899px) {
+  .timeline__entry {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--sp-2);
+  }
+
+  .timeline__time {
+    grid-column: 1 / -1;
+    inline-size: auto;
+  }
+}

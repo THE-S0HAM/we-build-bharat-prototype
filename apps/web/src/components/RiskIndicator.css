@@ -1,0 +1,57 @@
+/* ============================================================================
+ * RiskIndicator — the two risk rows of design.md §6.4.
+ *
+ * Imported by `RiskIndicator.tsx` only. Every value is a token from
+ * `src/styles/tokens.css`: no hex colour, no raw pixel size (design.md §6.3).
+ *
+ * Weight escalates LOW → CRITICAL: neutral, then amber outline, then amber tint,
+ * then the red tint. `--risk` appears for CRITICAL and nowhere else.
+ *
+ * Contrast, read from the pairings verified in `tokens.css` (WCAG AA, 4.5:1):
+ *   --text-secondary on --bg-subtle 6.80
+ *   --attention      on --bg-page 5.12, --bg-surface 5.43, --attention-soft 4.85
+ *   --risk           on --risk-soft 5.72
+ * ==========================================================================*/
+
+.risk-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--sp-1) var(--sp-3);
+  border: var(--border-w) solid transparent;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+  white-space: nowrap;
+}
+
+/* LOW — §6.4: neutral pill. Lowest weight on the page. */
+.risk-indicator--low {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+/* MEDIUM — §6.4: --attention pill. Amber carried by the text and the border only,
+ * so HIGH still reads as the heavier of the two. */
+.risk-indicator--medium {
+  background: transparent;
+  border-color: var(--attention);
+  color: var(--attention);
+}
+
+/* HIGH — §6.4: --attention-soft pill. Same amber as MEDIUM, now filled. */
+.risk-indicator--high {
+  background: var(--attention-soft);
+  border-color: var(--attention);
+  color: var(--attention);
+}
+
+/* CRITICAL — §6.4: --risk-soft pill, and the one place --risk is permitted for a
+ * level. The extra weight is the last step of the escalation, not decoration. */
+.risk-indicator--critical {
+  background: var(--risk-soft);
+  border-color: var(--risk);
+  color: var(--risk);
+  font-weight: var(--fw-semibold);
+}

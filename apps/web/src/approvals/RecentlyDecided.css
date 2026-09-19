@@ -1,0 +1,99 @@
+/* ============================================================================
+ * RecentlyDecided — what you decided in this session.
+ *
+ * Every value is a token from `src/styles/tokens.css` (requirement 12.1,
+ * design.md §6.3). No hex colour, no raw pixel size, no inline style.
+ *
+ * This is a record, not a decision surface, so it takes none of the §6.4
+ * "Needs your decision" treatment — no `--attention` rule, no tint. It reads at
+ * the weight of the Handled row: secondary text on the plain card surface. The
+ * queue below it is the only thing on this page asking for attention.
+ *
+ * Contrast, from the pairings verified in `tokens.css` (WCAG AA, 4.5:1):
+ *   --text-secondary on --bg-surface 7.87, --text-primary on --bg-surface 15.8.
+ * ==========================================================================*/
+
+.card.recently-decided {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.recently-decided__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.recently-decided__heading {
+  font-size: var(--fs-section);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* Requirement 5.11: the strip states its own scope. */
+.recently-decided__scope {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+.recently-decided__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  list-style: none;
+}
+
+.recently-decided__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-2);
+  border-bottom: var(--border-w) solid var(--border);
+  font-size: var(--fs-support);
+}
+
+.recently-decided__item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.recently-decided__title {
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  overflow-wrap: break-word;
+}
+
+.recently-decided__outcome {
+  color: var(--text-secondary);
+  overflow-wrap: break-word;
+}
+
+.recently-decided__time {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}
+
+.recently-decided__link {
+  align-self: flex-start;
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--brand-strong);
+}
+
+/* Below --bp-sm (640px). Media queries cannot read custom properties, so the
+   breakpoint number repeats the `--bp-sm` token value. */
+@media (max-width: 639px) {
+  .recently-decided__item {
+    grid-template-columns: 1fr;
+    gap: var(--sp-1);
+  }
+
+  .recently-decided__link {
+    min-height: var(--touch-min);
+    display: flex;
+    align-items: center;
+  }
+}

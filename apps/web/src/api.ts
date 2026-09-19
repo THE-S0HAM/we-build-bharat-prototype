@@ -4,6 +4,11 @@
  * Talks to API Gateway, attaching the Cognito ID token that the deployed
  * user-pool authorizer requires.
  *
+ * Every request is scoped to an organization, and that organization is derived
+ * from the token's `cognito:groups` claim inside this module (requirement 16.3).
+ * No caller passes one in: `src/orgContext.ts` holds the resolution rules and
+ * why a UI-supplied value is never accepted.
+ *
  * Mock data is opt-in via VITE_USE_MOCK=true and is intended for local UI work
  * without a backend. It is deliberately NOT a fallback: when a real API URL is
  * configured and the backend fails, the error surfaces to the user rather than
@@ -11,6 +16,7 @@
  */
 
 import { getIdToken } from "./auth";
+import { resolveOrganization, type ResolvedOrganization } from "./orgContext";
 import type {
   Approval,
   AuditEvent,
@@ -20,12 +26,27 @@ import type {
   SearchResult,
   Speaker,
   Task,
+  Team,
   TicketResult,
   VerificationCheck,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
-const ORG_ID = import.meta.env.VITE_ORG_ID || "ORG-wemakedev";
+
+/**
+ * Organization of last resort.
+ *
+ * The organization a request is scoped to comes from the ID token's
+ * `cognito:groups` claim (requirement 16.3) — see `src/orgContext.ts`. This
+ * build-time value is used **only when no session resolves an organization**:
+ * before sign-in, or with a token that carries no group claim. It is a
+ * fallback, not the primary path, and not a second source of truth. Whenever a
+ * session names an organization, the token wins and this value is ignored.
+ *
+ * It also names the organization the mock fixtures below belong to, since mock
+ * mode deliberately resolves no session.
+ */
+const FALLBACK_ORGANIZATION_ID = import.meta.env.VITE_ORG_ID || "ORG-wemakedev";
 
 /**
  * Mock mode is explicit opt-in. A missing API URL does not silently switch to
@@ -34,7 +55,31 @@ const ORG_ID = import.meta.env.VITE_ORG_ID || "ORG-wemakedev";
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 
 export const isMockMode = USE_MOCK;
-export const organizationId = ORG_ID;
+
+/**
+ * The organization this client is scoping requests to, plus the full set the
+ * session may act for, for surfaces that display or offer a choice between
+ * them: the sidebar account block (requirement 3.6) and any organization
+ * selector (requirement 1.12).
+ *
+ * Read-only. Nothing a caller passes back can change what the client sends —
+ * the organization is re-derived from the token inside every request, so a UI
+ * value cannot be substituted for it (requirement 16.4).
+ */
+export async function getOrganizationContext(): Promise<ResolvedOrganization> {
+  if (USE_MOCK) {
+    return {
+      organizationId: FALLBACK_ORGANIZATION_ID,
+      selectable: [FALLBACK_ORGANIZATION_ID],
+      source: "fallback",
+    };
+  }
+
+  return resolveOrganization({
+    idToken: await getIdToken(),
+    fallbackOrganizationId: FALLBACK_ORGANIZATION_ID,
+  });
+}
 
 export class ApiError extends Error {
   constructor(
@@ -46,9 +91,35 @@ export class ApiError extends Error {
   }
 }
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+/** A request, built once the organization to scope it to is known. */
+type ScopedRequest = {
+  readonly path: string;
+  readonly init?: RequestInit;
+};
+
+/**
+ * Issue a request scoped to the session's organization.
+ *
+ * The caller receives the resolved `organization_id` and places it where the
+ * endpoint expects it — the query string for reads, the body for writes — but
+ * cannot supply one. Resolution happens here, from the same token that becomes
+ * the `Authorization` header, so the organization a request claims and the
+ * token it presents are read from one value and cannot drift apart.
+ *
+ * `organization_id` is still caller-supplied data as far as the backend is
+ * concerned: `tenancy.authorize_organization` re-derives the caller's groups
+ * from its own copy of the claims and refuses anything outside them. This
+ * resolution makes the client send the right value; it does not make the value
+ * trusted (requirement 16.2).
+ */
+async function apiFetch<T>(
+  buildRequest: (organizationId: string) => ScopedRequest,
+): Promise<T> {
   if (USE_MOCK) {
-    return mockFetch<T>(path, options);
+    // Mock mode is local UI work with no backend and no session, so there is no
+    // token to derive an organization from: the fixtures use the fallback.
+    const mockRequest = buildRequest(FALLBACK_ORGANIZATION_ID);
+    return mockFetch<T>(mockRequest.path, mockRequest.init);
   }
 
   if (!API_BASE) {
@@ -64,12 +135,18 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     throw new ApiError("Your session has expired. Please sign in again.", 401, "UNAUTHORIZED");
   }
 
+  const { organizationId } = resolveOrganization({
+    idToken: token,
+    fallbackOrganizationId: FALLBACK_ORGANIZATION_ID,
+  });
+  const { path, init } = buildRequest(organizationId);
+
   const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...init,
     headers: {
       "Content-Type": "application/json",
       Authorization: token,
-      ...options?.headers,
+      ...init?.headers,
     },
   });
 
@@ -88,78 +165,155 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 // Public API
 // =============================================================
 
+/**
+ * `organization_id` as a query-string pair.
+ *
+ * Encoded rather than interpolated raw: the value is a Cognito group name, so
+ * one containing a `&` or `=` would otherwise append parameters of its own to
+ * the request the client builds.
+ */
+function orgQuery(organizationId: string): string {
+  return `organization_id=${encodeURIComponent(organizationId)}`;
+}
+
 export async function getCommandCenter(): Promise<CommandCenterData> {
-  return apiFetch(`/command-center?organization_id=${ORG_ID}`);
+  return apiFetch((org) => ({ path: `/command-center?${orgQuery(org)}` }));
 }
 
 export async function getEvents(): Promise<{ events: Event[]; count: number }> {
-  return apiFetch(`/events?organization_id=${ORG_ID}`);
+  return apiFetch((org) => ({ path: `/events?${orgQuery(org)}` }));
 }
 
 export async function getEvent(eventId: string): Promise<Event> {
-  return apiFetch(`/events/${eventId}?organization_id=${ORG_ID}`);
+  return apiFetch((org) => ({ path: `/events/${eventId}?${orgQuery(org)}` }));
 }
 
 export async function getSpeakers(eventId: string): Promise<{ speakers: Speaker[]; count: number }> {
-  return apiFetch(`/events/${eventId}/speakers?organization_id=${ORG_ID}`);
+  return apiFetch((org) => ({ path: `/events/${eventId}/speakers?${orgQuery(org)}` }));
+}
+
+/**
+ * The event's team directory.
+ *
+ * This route does **not** exist in `template.yaml` yet (design.md A5): the API
+ * exposes tasks per team and nothing else under `teams`. The client is written
+ * against the specified contract — `{ teams[], count }`, filtered server-side to
+ * `entity_type == "TEAM"` — so TeamOps works the day the route lands, and
+ * `src/teamDirectory.ts` turns today's absent response into the honest
+ * "Team directory unavailable" state rather than a fabricated team list
+ * (requirements 7.2, 7.3).
+ *
+ * Deliberately no mock fixture: a mock team directory would be this console
+ * inventing the organization's team structure, which is the exact defect A5
+ * records. In mock mode the response carries no `teams`, which the page reads as
+ * unavailable.
+ */
+export async function getTeams(eventId: string): Promise<{ teams: Team[]; count: number }> {
+  return apiFetch((org) => ({ path: `/events/${eventId}/teams?${orgQuery(org)}` }));
 }
 
 export async function getTasks(eventId: string, teamId: string): Promise<{ tasks: Task[]; count: number }> {
-  return apiFetch(`/events/${eventId}/teams/${teamId}/tasks?organization_id=${ORG_ID}`);
+  return apiFetch((org) => ({
+    path: `/events/${eventId}/teams/${teamId}/tasks?${orgQuery(org)}`,
+  }));
 }
 
 export async function getApprovals(eventId: string): Promise<{ approvals: Approval[]; count: number }> {
-  return apiFetch(`/events/${eventId}/approvals?organization_id=${ORG_ID}`);
+  return apiFetch((org) => ({ path: `/events/${eventId}/approvals?${orgQuery(org)}` }));
 }
 
-export async function decideApproval(eventId: string, approvalId: string, decision: string, notes: string): Promise<unknown> {
-  return apiFetch(`/events/${eventId}/approvals/${approvalId}`, {
-    method: "PUT",
-    body: JSON.stringify({ organization_id: ORG_ID, decision, notes }),
-  });
+/**
+ * Record a decision on one prepared action.
+ *
+ * `editedAction` is a single free-text string because that is the whole of the
+ * contract: `approvals_handler._decide_approval` accepts `decision="EDITED"`
+ * plus one `edited_action`, and `Approval.edited_action` is a plain string
+ * (design.md A4). There is no field-level schema for an action, so no structured
+ * shape is invented here. The key is omitted entirely for the other two
+ * decisions rather than sent empty.
+ */
+export async function decideApproval(
+  eventId: string,
+  approvalId: string,
+  decision: string,
+  notes: string,
+  editedAction?: string,
+): Promise<unknown> {
+  return apiFetch((org) => ({
+    path: `/events/${eventId}/approvals/${approvalId}`,
+    init: {
+      method: "PUT",
+      body: JSON.stringify({
+        organization_id: org,
+        decision,
+        notes,
+        ...(editedAction === undefined ? {} : { edited_action: editedAction }),
+      }),
+    },
+  }));
 }
 
 export async function getIncidents(eventId: string): Promise<{ incidents: Incident[]; count: number }> {
-  return apiFetch(`/events/${eventId}/incidents?organization_id=${ORG_ID}`);
+  return apiFetch((org) => ({ path: `/events/${eventId}/incidents?${orgQuery(org)}` }));
 }
 
 export async function getAuditLog(eventId: string): Promise<{ audit_events: AuditEvent[]; count: number }> {
-  return apiFetch(`/events/${eventId}/audit?organization_id=${ORG_ID}`);
+  return apiFetch((org) => ({ path: `/events/${eventId}/audit?${orgQuery(org)}` }));
 }
 
 export async function searchCheckin(eventId: string, searchParams: Record<string, string>): Promise<SearchResult> {
-  return apiFetch(`/events/${eventId}/checkin/search`, {
-    method: "POST",
-    body: JSON.stringify({ organization_id: ORG_ID, ...searchParams }),
-  });
+  return apiFetch((org) => ({
+    path: `/events/${eventId}/checkin/search`,
+    init: {
+      method: "POST",
+      // The resolved organization is written *last*, so a caller's search field
+      // named `organization_id` cannot overwrite it. Spread order is the whole
+      // guarantee here: this is the only endpoint that carries caller-shaped
+      // keys into a request body, and the organization must come from the token
+      // this request is about to present (requirement 16.4, design.md Property 4).
+      body: JSON.stringify({ ...searchParams, organization_id: org }),
+    },
+  }));
 }
 
 export async function verifyCheckin(eventId: string, registrationId: string): Promise<{ verification: { all_passed: boolean; checks: VerificationCheck[] }; registration: Record<string, string> }> {
-  return apiFetch(`/events/${eventId}/checkin/verify`, {
-    method: "POST",
-    body: JSON.stringify({ organization_id: ORG_ID, registration_id: registrationId }),
-  });
+  return apiFetch((org) => ({
+    path: `/events/${eventId}/checkin/verify`,
+    init: {
+      method: "POST",
+      body: JSON.stringify({ organization_id: org, registration_id: registrationId }),
+    },
+  }));
 }
 
 export async function recoverTicket(eventId: string, registrationId: string): Promise<TicketResult> {
-  return apiFetch(`/events/${eventId}/checkin/recover`, {
-    method: "POST",
-    body: JSON.stringify({ organization_id: ORG_ID, registration_id: registrationId }),
-  });
+  return apiFetch((org) => ({
+    path: `/events/${eventId}/checkin/recover`,
+    init: {
+      method: "POST",
+      body: JSON.stringify({ organization_id: org, registration_id: registrationId }),
+    },
+  }));
 }
 
 export async function completeCheckin(eventId: string, registrationId: string): Promise<unknown> {
-  return apiFetch(`/events/${eventId}/checkin/complete`, {
-    method: "POST",
-    body: JSON.stringify({ organization_id: ORG_ID, registration_id: registrationId }),
-  });
+  return apiFetch((org) => ({
+    path: `/events/${eventId}/checkin/complete`,
+    init: {
+      method: "POST",
+      body: JSON.stringify({ organization_id: org, registration_id: registrationId }),
+    },
+  }));
 }
 
 export async function reconcilePayment(eventId: string, transactionId: string): Promise<unknown> {
-  return apiFetch(`/events/${eventId}/checkin/reconcile`, {
-    method: "POST",
-    body: JSON.stringify({ organization_id: ORG_ID, transaction_id: transactionId }),
-  });
+  return apiFetch((org) => ({
+    path: `/events/${eventId}/checkin/reconcile`,
+    init: {
+      method: "POST",
+      body: JSON.stringify({ organization_id: org, transaction_id: transactionId }),
+    },
+  }));
 }
 
 // =============================================================
@@ -202,11 +356,11 @@ const MOCK_INCIDENTS: Incident[] = [
 ];
 
 const MOCK_AUDIT: AuditEvent[] = [
-  { audit_id: "AUD-001", organization_id: ORG_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 60000).toISOString(), action: "SPEAKER_FOLLOWUP_SENT", actor_type: "agent", actor_id: "SpeakerOps", resource_type: "Speaker", resource_id: "SPK-002", outcome: "success", tool_used: "send_speaker_invite" },
-  { audit_id: "AUD-002", organization_id: ORG_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 120000).toISOString(), action: "INCIDENT_DETECTED", actor_type: "agent", actor_id: "IncidentOps", resource_type: "Incident", resource_id: "INC-001", outcome: "success" },
-  { audit_id: "AUD-003", organization_id: ORG_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 180000).toISOString(), action: "APPROVAL_REQUESTED", actor_type: "agent", actor_id: "IncidentOps", resource_type: "Approval", resource_id: "APR-001", outcome: "success" },
-  { audit_id: "AUD-004", organization_id: ORG_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 300000).toISOString(), action: "TASK_CREATED", actor_type: "user", actor_id: "user-001", resource_type: "Task", resource_id: "TSK-001", outcome: "success" },
-  { audit_id: "AUD-005", organization_id: ORG_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 600000).toISOString(), action: "CHECKIN_COMPLETED", actor_type: "user", actor_id: "volunteer-001", resource_type: "CheckIn", resource_id: "REG-2026-004829", outcome: "success" },
+  { audit_id: "AUD-001", organization_id: FALLBACK_ORGANIZATION_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 60000).toISOString(), action: "SPEAKER_FOLLOWUP_SENT", actor_type: "agent", actor_id: "SpeakerOps", resource_type: "Speaker", resource_id: "SPK-002", outcome: "success", tool_used: "send_speaker_invite" },
+  { audit_id: "AUD-002", organization_id: FALLBACK_ORGANIZATION_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 120000).toISOString(), action: "INCIDENT_DETECTED", actor_type: "agent", actor_id: "IncidentOps", resource_type: "Incident", resource_id: "INC-001", outcome: "success" },
+  { audit_id: "AUD-003", organization_id: FALLBACK_ORGANIZATION_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 180000).toISOString(), action: "APPROVAL_REQUESTED", actor_type: "agent", actor_id: "IncidentOps", resource_type: "Approval", resource_id: "APR-001", outcome: "success" },
+  { audit_id: "AUD-004", organization_id: FALLBACK_ORGANIZATION_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 300000).toISOString(), action: "TASK_CREATED", actor_type: "user", actor_id: "user-001", resource_type: "Task", resource_id: "TSK-001", outcome: "success" },
+  { audit_id: "AUD-005", organization_id: FALLBACK_ORGANIZATION_ID, event_id: MOCK_EVENT_ID, timestamp: new Date(Date.now() - 600000).toISOString(), action: "CHECKIN_COMPLETED", actor_type: "user", actor_id: "volunteer-001", resource_type: "CheckIn", resource_id: "REG-2026-004829", outcome: "success" },
 ];
 
 const MOCK_REGISTRATIONS = [
@@ -219,7 +373,7 @@ async function mockFetch<T>(path: string, _options?: RequestInit): Promise<T> {
 
   if (path.includes("/command-center")) {
     return {
-      organization_id: ORG_ID,
+      organization_id: FALLBACK_ORGANIZATION_ID,
       summary: { active_events: 1, total_events: 1, pending_approvals: 2, critical_incidents: 1, overdue_tasks: 2 },
       events: [{ event_id: MOCK_EVENT_ID, name: "DevCon Bengaluru 2026", status: "ACTIVE", pending_approvals: 2, critical_incidents: 1, overdue_tasks: 2, blocked_tasks: 1, total_tasks: 9 }],
       recent_actions: MOCK_AUDIT.slice(0, 5),

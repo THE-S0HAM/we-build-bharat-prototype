@@ -1,0 +1,81 @@
+/* ============================================================================
+ * SpeakerOps — page-scoped rules, replacing the inline `style={{...}}` literals
+ * this page used to carry (requirement 12.2, design.md §6.3).
+ *
+ * Every value is a token from `src/styles/tokens.css`. No hex colour, no raw
+ * pixel size.
+ *
+ * This file is deliberately short. The page's sections, table cells, drawer
+ * headings, detail rows and change form all use the shared families in
+ * `src/index.css` (`.page-section*`, `.cell-stack*`, `.drawer-*`, `.detail-list*`,
+ * `.form-*`), and its contextual visual is the shared `DistributionBar`. Those
+ * families exist because this page previously named eight class families that
+ * had no rules at all, so its groups, its drawer and its whole change form
+ * rendered unstyled beside every other route's (design.md §15.4).
+ *
+ * What is left here is only what is genuinely this page's: the four segment
+ * fills on its bar, and the two lines in its activity section.
+ *
+ * Contrast, from the pairings verified in `tokens.css` (WCAG AA, 4.5:1):
+ *   --text-secondary on --bg-surface 7.87
+ *   --text-muted     on --bg-surface 5.57
+ * ==========================================================================*/
+
+/* --- Confirmation progress: this page's one contextual visual -------------
+ * Requirements 6.2, 12.10. The frame, the bar geometry, the legend rhythm and
+ * the sentence are `DistributionBar`'s; the four fills below are this page's,
+ * because "attention / in progress / confirmed / closed" is this page's
+ * vocabulary and no other route's.
+ *
+ * The fills are the brand/neutral ramp, not status colour: this page maps no
+ * status to a colour of its own (requirement 12.5). Each fill is repeated as a
+ * legend swatch that sits beside its own text label and count, so nothing is
+ * distinguished by hue alone (requirements 15.10, 15.11).
+ *
+ * Scoped under `.speaker-ops` so these fills reach this page's bar and no
+ * other's, and so they outrank `DistributionBar.css`'s neutral defaults on
+ * specificity rather than on import order. Each rule sets both properties
+ * because the bar segment is an SVG `<rect>`, which takes `fill`, and the legend
+ * swatch is a `<span>`, which takes `background`; one pair of values, stated
+ * once, is what keeps the swatch from ever drifting from the segment it repeats.
+ * ------------------------------------------------------------------------- */
+
+.speaker-ops .distribution__segment[data-segment="attention"],
+.speaker-ops .distribution__swatch[data-segment="attention"] {
+  fill: var(--border-strong);
+  background: var(--border-strong);
+}
+
+.speaker-ops .distribution__segment[data-segment="in-progress"],
+.speaker-ops .distribution__swatch[data-segment="in-progress"] {
+  fill: var(--brand-soft);
+  background: var(--brand-soft);
+}
+
+.speaker-ops .distribution__segment[data-segment="confirmed"],
+.speaker-ops .distribution__swatch[data-segment="confirmed"] {
+  fill: var(--brand);
+  background: var(--brand);
+}
+
+.speaker-ops .distribution__segment[data-segment="closed"],
+.speaker-ops .distribution__swatch[data-segment="closed"] {
+  fill: var(--border);
+  background: var(--border);
+}
+
+/* --- Drawer: what CommunityOps has done ---------------------------------- */
+
+/* Matches `.incident-proposal__empty` and the other "nothing recorded" lines:
+   muted, so an absence never reads as a finding. */
+.speaker-activity__empty {
+  font-size: var(--fs-support);
+  color: var(--text-muted);
+  line-height: var(--lh-body);
+}
+
+/* The outcome column of a `Timeline` row in this drawer. */
+.speaker-activity__outcome {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}

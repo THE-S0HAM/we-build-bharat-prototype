@@ -1,0 +1,165 @@
+/* ============================================================================
+ * ApprovalActions — the decision row and its two expanded forms.
+ *
+ * Every value is a token from `src/styles/tokens.css` (requirement 12.1,
+ * design.md §6.3). No hex colour, no raw pixel size.
+ *
+ * Nothing here maps a decision to a colour. Approve carries the product's one
+ * primary treatment (`.btn-primary`); Edit and Decline are the neutral button,
+ * distinguished by their labels. `--risk` is reserved for CRITICAL severity and
+ * destructive confirmation (design.md §6.4), and declining a prepared action is
+ * neither — it means nothing happens.
+ *
+ * Contrast, from the pairings verified in `tokens.css` (WCAG AA):
+ *   --text-secondary on --attention-soft holds above its verified 6.80 on
+ *   --bg-subtle, since --attention-soft is the lighter surface.
+ * ==========================================================================*/
+
+.approval-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* All three labels stay visible at every width: the row wraps rather than
+   truncating or collapsing (requirement 14.5). */
+.approval-actions__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.approval-actions__button {
+  /* One button height for the whole product (requirement 12.11); below --bp-md
+     the touch minimum takes over in the media query at the end of this file. */
+  flex: 0 0 auto;
+}
+
+/* A control whose request is in flight is disabled *and* visibly quieter, so the
+   lock is perceivable and not only announced (requirement 13.11). */
+.approval-actions__button[aria-busy="true"],
+.approval-actions__button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.approval-actions__submitting {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+/* --- The expanded forms --------------------------------------------------- */
+
+.approval-actions__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.approval-actions__original {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.approval-actions__original-label {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
+
+/* The exact string the agent prepared, so what is compared is what is submitted. */
+.approval-actions__original-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.approval-actions__label {
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+/* The one multi-line control on this page. Height comes from `rows`, so it is
+   not a control-height token: `--input-h` is the single-line input height. */
+.approval-actions__field {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  resize: vertical;
+}
+
+.approval-actions__field:focus {
+  border-color: var(--brand);
+}
+
+.approval-actions__field:disabled {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.approval-actions__notice {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+/* A refused submit. The message is associated to the field through
+   aria-describedby, and weighted rather than only coloured (requirement 15.10). */
+.approval-actions__validation {
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--attention);
+}
+
+.approval-actions__panel-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+
+.approval-actions__failure {
+  margin-top: var(--sp-1);
+}
+
+/* Below --bp-md (900px). Media queries cannot read custom properties, so the
+   breakpoint number repeats the `--bp-md` token value. */
+@media (max-width: 899px) {
+  .approval-actions__button {
+    min-height: var(--touch-min);
+  }
+}
+
+/* Below --bp-sm (640px) — requirement 14.5. Approve, Edit and Decline stack
+   full width, one per line, each keeping its whole label. The row never
+   truncates a label and never folds the three actions into a menu: a decision
+   surface that hides what declining is called is not a decision surface. */
+@media (max-width: 639px) {
+  .approval-actions__row,
+  .approval-actions__panel-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .approval-actions__button {
+    width: 100%;
+  }
+}

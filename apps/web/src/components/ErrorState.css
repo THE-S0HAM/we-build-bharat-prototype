@@ -1,0 +1,61 @@
+/* ============================================================================
+ * ErrorState — the one error pattern in the product (design.md §7, §7.1).
+ *
+ * Neutral on purpose. `--risk` is reserved for CRITICAL severity and
+ * destructive confirmation (design.md §6.4), and a view that failed to load is
+ * neither: spending the red here would make a transient failure look like an
+ * operational emergency. The treatment is the same restrained one §6.4 gives
+ * "Cannot be automated" — neutral surface, `--border-strong` so the boundary is
+ * perceivable, one sentence and one action.
+ *
+ * Every value comes from `src/styles/tokens.css`.
+ * ==========================================================================*/
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-6);
+  background: var(--bg-subtle);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+/* Not a heading element: an error state is scoped to whichever region failed
+   (requirement 13.8) and can appear anywhere on the page, so it must not inject
+   a heading level into the page's descending heading order (requirement 15.1).
+   Weight carries the hierarchy instead. */
+.error-state__message {
+  font-size: var(--fs-card-title);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.error-state__detail {
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  max-width: var(--drawer-w);
+}
+
+/* Caller-owned safe content: the masked candidates of an ambiguous check-in
+   match (requirement 13.5), or the link to Approvals (requirement 13.6). */
+.error-state__extra {
+  width: 100%;
+}
+
+/* The link an approval-gated failure carries to Approvals, rendered by
+   `ApiErrorState` (requirement 13.6). Underlined, not just brand-coloured: a
+   link identified by colour alone is a link some readers cannot see
+   (requirement 15.10). Colour, hover and the focus ring all come from the global
+   `a` rules in `index.css`, so this adds the underline and nothing else. */
+.error-state__link {
+  text-decoration: underline;
+  text-underline-offset: var(--sp-1);
+}
+
+/* The retry control is the shared `.btn`, so the product still has exactly one
+   button height (requirement 12.11); this only sets its spacing. */
+.error-state__retry {
+  margin-top: var(--sp-2);
+}

@@ -1,0 +1,207 @@
+/* ============================================================================
+ * EventSwitcher — the top bar's event context selector (requirement 3.11,
+ * design.md §7).
+ *
+ * Deliberately quiet. This is context, not a feature: a dot, a name and a
+ * chevron at `--fs-support`, borderless until hovered or opened. `Topbar.css`
+ * owns where the control sits in the row; this file owns nothing outside the
+ * control itself.
+ *
+ * The three non-menu states — loading, unavailable, and a single event — render
+ * as a `<p>` with the same base class, so the switcher occupies the same place
+ * in the row whether or not there is anything to open. Nothing shifts when
+ * `GET /events` lands.
+ *
+ * Every value comes from `src/styles/tokens.css`. The only literal number is the
+ * `--bp-sm` breakpoint, because CSS media queries cannot read custom
+ * properties. The global `:focus-visible` ring in `index.css` covers the trigger
+ * and the options and is deliberately not restated.
+ * ==========================================================================*/
+
+.event-switcher {
+  /* Positioning context for the list, which is the only absolutely positioned
+     thing here. */
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  /* A long event name shrinks inside the row rather than widening it
+     (requirement 14.7). */
+  min-width: 0;
+}
+
+/* --- Non-menu states ------------------------------------------------------
+ * `loading`, `failed`, and `ready` with exactly one event. Text, not controls:
+ * there is either nothing resolved yet or nothing to choose between. Padding
+ * matches the trigger's so the row does not reflow when a second event appears
+ * and the text becomes a button. */
+.event-switcher--pending,
+.event-switcher--static {
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-support);
+}
+
+.event-switcher--pending {
+  color: var(--text-muted);
+}
+
+.event-switcher--static {
+  color: var(--text-secondary);
+}
+
+/* --- The dot --------------------------------------------------------------
+ * Marks the switcher's place in the row and says nothing about the event's
+ * state — status is `StatusBadge`'s alone (requirement 12.5). Brand when an
+ * event is resolved, neutral when one is not, and `aria-hidden` either way, so
+ * it carries no meaning by colour (requirement 15.10). */
+.event-switcher__dot {
+  flex: 0 0 auto;
+  width: var(--sp-2);
+  height: var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: var(--brand);
+}
+
+.event-switcher__dot--pending {
+  background: var(--border-strong);
+}
+
+/* --- Trigger --------------------------------------------------------------
+ * Borderless at rest. The border is reserved on every state as `transparent`,
+ * so hovering and opening colour it in rather than changing the control's size
+ * and nudging the rest of the row. */
+.event-switcher__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--sp-2);
+  border: var(--border-w) solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-support);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.event-switcher__trigger:hover,
+.event-switcher__trigger[aria-expanded="true"] {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.event-switcher__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: var(--fw-medium);
+}
+
+.event-switcher__chevron {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+}
+
+/* Announced, not drawn: the trigger reads as "Active event: <name>" rather than
+   as a stray event name. Clipped rather than `display: none`, which would remove
+   it from the accessibility tree as well. `--border-w` is the smallest length
+   token in the scale and stands in for the classic 1px clip box; it is a
+   mechanism, not a visual value. */
+.event-switcher__assistive {
+  position: absolute;
+  width: var(--border-w);
+  height: var(--border-w);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- Option list ----------------------------------------------------------
+ * Raised above the sticky header's own layer, below the drawer: this is a
+ * context selector, not a modal surface, so it never competes with the one
+ * progressive-disclosure layer (requirement 12.6). */
+.event-switcher__list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: var(--z-overlay);
+  margin-top: var(--sp-1);
+  min-width: var(--nav-w);
+  max-width: var(--drawer-w);
+  padding: var(--sp-1);
+  list-style: none;
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+}
+
+.event-switcher__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-height: var(--control-h);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+
+.event-switcher__option:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+/* The active option carries weight and the "Current" marker as well as colour,
+   so which event is in use is never signalled by colour alone
+   (requirement 15.10). */
+.event-switcher__option--selected {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.event-switcher__option-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Neutral, because it marks position rather than status (requirement 12.5). */
+.event-switcher__option-marker {
+  flex: 0 0 auto;
+  padding: 0 var(--sp-2);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+/* --- Below --bp-sm (640px) ------------------------------------------------
+ * The list stops tracking the trigger's left edge and fills the row instead, so
+ * a long event name is not cut off by the viewport. */
+@media (max-width: 639px) {
+  .event-switcher__list {
+    left: auto;
+    right: 0;
+    min-width: 0;
+    max-width: none;
+    width: max-content;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-switcher__trigger {
+    transition: none;
+  }
+}

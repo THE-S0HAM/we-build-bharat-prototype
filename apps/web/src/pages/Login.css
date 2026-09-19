@@ -1,0 +1,341 @@
+/* ============================================================================
+ * Sign-in screen — LIGHT THEME (requirement 12.3, design.md §6.1).
+ *
+ * This is the first screen anyone sees, so it is the strictest test of the
+ * design system rather than an exception to it: every value below comes from
+ * `src/styles/tokens.css`, and the hierarchy is carried by type weight, size and
+ * whitespace instead of by colour or ornament (design.md §6.3). There is no dark
+ * side panel, no illustration wall and no marketing copy — one wordmark, one
+ * sentence, one card.
+ *
+ * Two deliberate restraints:
+ *
+ *   - The page wash is a single token-coloured radial tint, faint enough that
+ *     the card still reads as the only surface. `--bg-page` is the base, so the
+ *     screen degrades to a plain page if the gradient is ever dropped.
+ *   - A rejected credential is styled with the neutral treatment `ErrorState`
+ *     uses, not with `--risk`. Red is reserved for CRITICAL severity and
+ *     destructive confirmation (design.md §6.4); a mistyped password is neither,
+ *     and spending the red here would make a typo look like an incident. The
+ *     sentence carries the meaning, so nothing is signalled by colour alone
+ *     (requirement 15.10).
+ *
+ * The only literal numbers are the media-query breakpoints, which repeat the
+ * `--bp-*` values because media queries cannot read custom properties.
+ * ==========================================================================*/
+
+.login {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-8);
+  padding: var(--sp-12) var(--sp-6);
+  background:
+    radial-gradient(circle at 50% 0%, var(--brand-soft), var(--bg-page) 60%),
+    var(--bg-page);
+}
+
+/* --- Wordmark and promise -------------------------------------------------
+ * Above the card, centred, so the product identity is read before the form. */
+
+.login__masthead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  text-align: center;
+  max-width: var(--drawer-w);
+}
+
+.login__wordmark {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-display);
+  color: var(--brand-strong);
+}
+
+.login__mark {
+  width: var(--sp-8);
+  height: var(--sp-8);
+  flex-shrink: 0;
+}
+
+/* One ring, three nodes, one centre: a community around a shared operation.
+   It carries no data, which is why it is part of the wordmark rather than a
+   contextual visual (requirement 12.10). */
+.login__mark-orbit {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: var(--border-w);
+}
+
+.login__mark-core {
+  fill: var(--brand-strong);
+}
+
+.login__mark-node {
+  fill: var(--brand);
+}
+
+.login__promise {
+  font-size: var(--fs-section);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+}
+
+/* --- The card ------------------------------------------------------------
+ * Narrower than `--drawer-w` by one spacing step, which keeps the form a
+ * single readable column without introducing a new width value. */
+
+.login__panel {
+  width: 100%;
+  max-width: calc(var(--drawer-w) - var(--sp-16));
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  padding: var(--sp-8);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+}
+
+.login__panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.login__title {
+  font-size: var(--fs-section);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+
+.login__subtitle {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+/* --- Federated providers -------------------------------------------------
+ * Present only when `VITE_AUTH_PROVIDERS` names a provider the console can
+ * actually redirect to (requirement 1.10). With none configured — the state
+ * today (design.md A1) — neither block below exists in the DOM at all, and the
+ * form is the whole card (requirement 1.11). Nothing here has a disabled
+ * variant, because a disabled provider button is never rendered. */
+
+.login__providers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* Height and colour come from the shared `.btn`, so the product still has one
+   button height (requirement 12.11); this only makes it full width. */
+.login__provider {
+  width: 100%;
+}
+
+.login__divider {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.login__divider::before,
+.login__divider::after {
+  content: "";
+  flex: 1;
+  height: var(--border-w);
+  background: var(--border);
+}
+
+/* --- Form --------------------------------------------------------------- */
+
+.login__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+/* The live region is always mounted, so it must take no space while it has
+   nothing to announce. */
+.login__feedback:empty {
+  display: none;
+}
+
+.login__error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--bg-subtle);
+  /* A perceivable boundary, per the 3:1 non-text rule in tokens.css. */
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-support);
+  color: var(--text-primary);
+}
+
+.login__error-mark {
+  width: var(--sp-4);
+  height: var(--sp-4);
+  flex-shrink: 0;
+  /* Optical alignment with the first line of a --fs-support sentence. */
+  margin-top: calc(var(--sp-1) / 2);
+}
+
+.login__error-mark path {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: var(--border-w);
+  stroke-linejoin: round;
+}
+
+.login__error-mark rect,
+.login__error-mark circle {
+  fill: var(--text-secondary);
+}
+
+/* A fieldset is the group that disables and re-enables in one move
+   (requirement 1.2); it contributes no visual of its own. */
+.login__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  border: 0;
+  min-inline-size: 0;
+}
+
+.login__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.login__label {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.login__submit {
+  width: 100%;
+  margin-top: var(--sp-2);
+}
+
+/* The submitting state reads as busy rather than broken: the label says so, and
+   the controls hold their position so nothing moves under the pointer. */
+.login__fields:disabled .login__submit {
+  cursor: progress;
+}
+
+/* --- Try Demo Account ----------------------------------------------------
+ * Present only when both demo configuration values exist (requirement 2.2), so
+ * like the provider block there is no disabled variant to style. It sits inside
+ * the card directly below the form, which keeps it in the initial viewport
+ * without scrolling (requirement 2.1).
+ *
+ * Treatment is the shared secondary `.btn`, never `.btn-primary`: the screen has
+ * one primary action and it is "Sign in" (requirement 12.11). A top border
+ * separates it from the form without adding the providers block's "or" divider,
+ * which would read as a second way to do the same thing. */
+
+.login__demo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-top: var(--sp-4);
+  border-top: var(--border-w) solid var(--border);
+}
+
+/* Always mounted so a late failure is announced, and taking no space until it
+   has something to say. */
+.login__demo-feedback:empty {
+  display: none;
+}
+
+/* Same treatment as the form's failure, because it is the same kind of message:
+   a perceivable boundary and body text, never a colour-only signal
+   (requirement 15.10). */
+.login__demo-error {
+  padding: var(--sp-3);
+  background: var(--bg-subtle);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-support);
+  color: var(--text-primary);
+}
+
+.login__demo-action {
+  width: 100%;
+}
+
+.login__demo-action[aria-busy="true"] {
+  cursor: progress;
+}
+
+.login__demo-note {
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Shown by `App` while a session is still being restored on this route, so the
+   screen it replaces has the same frame and the same centring. */
+.login__restoring {
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+}
+
+/* --- Responsive ----------------------------------------------------------
+ * Below --bp-md (900px) every interactive target is at least --touch-min
+ * (requirement 14.6). Below --bp-sm (640px) the card gives back its outer
+ * padding and the wordmark steps down one size, so nothing is clipped and no
+ * horizontal scroll appears (requirement 14.7). */
+
+@media (max-width: 899px) {
+  .login__provider,
+  .login__demo-action,
+  .login__submit {
+    min-height: var(--touch-min);
+  }
+
+  .login .input {
+    height: var(--touch-min);
+  }
+}
+
+@media (max-width: 639px) {
+  .login {
+    gap: var(--sp-6);
+    padding: var(--sp-8) var(--sp-4);
+  }
+
+  .login__panel {
+    padding: var(--sp-6);
+  }
+
+  .login__wordmark {
+    font-size: var(--fs-page-title);
+  }
+
+  .login__promise {
+    font-size: var(--fs-body);
+  }
+}
