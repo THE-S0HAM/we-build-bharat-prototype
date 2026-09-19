@@ -126,6 +126,19 @@ Resources:
         Authorizers:
           CognitoAuthorizer:
             UserPoolArn: !GetAtt UserPool.Arn
+      # POST /demo/session is the only route without an authorizer, so it is the only one an
+      # anonymous caller can reach. A tight per-method throttle keeps it from becoming a way to
+      # exhaust the Cognito AdminInitiateAuth quota for the whole pool, which would lock real users
+      # out of signing in. Everything else keeps the account default, since the authorizer already
+      # costs an attacker a valid token.
+      #
+      # Two requests a second is generous for a button a person clicks, and the handler already
+      # reports Cognito's own TooManyRequestsException in terms the visitor can act on.
+      MethodSettings:
+        - ResourcePath: /demo/session
+          HttpMethod: POST
+          ThrottlingRateLimit: 2
+          ThrottlingBurstLimit: 5
 
   # ===================================================================
   # DynamoDB Tables
