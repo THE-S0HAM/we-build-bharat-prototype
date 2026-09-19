@@ -1,5 +1,5 @@
 [project]
-name = "orbitops"
+name = "communityops"
 version = "0.1.0"
 description = "CommunityOps Agent — AI operations layer for community-led events"
 requires-python = ">=3.12"
@@ -58,4 +58,10 @@ warn_unused_configs = true
 
 [build-system]
 requires = ["setuptools>=75.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# The Lambda handlers import `services.*`, `agents.*` and `tools.*` as
+# top-level packages, so all three are part of the distribution. Tests and
+# scripts are intentionally excluded.
+include = ["services*", "agents*", "tools*"]
