@@ -5,9 +5,15 @@
         "shape": {
           "type": "Record",
           "attributes": {
-            "role": { "type": "String" },
-            "organization_id": { "type": "String" },
-            "email": { "type": "String" }
+            "role": {
+              "type": "String"
+            },
+            "organization_id": {
+              "type": "String"
+            },
+            "email": {
+              "type": "String"
+            }
           }
         }
       },
@@ -15,8 +21,15 @@
         "shape": {
           "type": "Record",
           "attributes": {
-            "agent_name": { "type": "String" },
-            "organization_id": { "type": "String" }
+            "agent_name": {
+              "type": "String"
+            },
+            "organization_id": {
+              "type": "String"
+            },
+            "acting_for_user_id": {
+              "type": "String"
+            }
           }
         }
       },
@@ -24,9 +37,50 @@
         "shape": {
           "type": "Record",
           "attributes": {
-            "organization_id": { "type": "String" },
-            "event_id": { "type": "String" },
-            "status": { "type": "String" }
+            "organization_id": {
+              "type": "String"
+            },
+            "event_id": {
+              "type": "String"
+            },
+            "status": {
+              "type": "String"
+            }
+          }
+        }
+      },
+      "Team": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "organization_id": {
+              "type": "String"
+            },
+            "event_id": {
+              "type": "String"
+            },
+            "team_id": {
+              "type": "String"
+            }
+          }
+        }
+      },
+      "Task": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "organization_id": {
+              "type": "String"
+            },
+            "event_id": {
+              "type": "String"
+            },
+            "team_id": {
+              "type": "String"
+            },
+            "assigned_to": {
+              "type": "String"
+            }
           }
         }
       },
@@ -34,9 +88,15 @@
         "shape": {
           "type": "Record",
           "attributes": {
-            "organization_id": { "type": "String" },
-            "event_id": { "type": "String" },
-            "registration_id": { "type": "String" }
+            "organization_id": {
+              "type": "String"
+            },
+            "event_id": {
+              "type": "String"
+            },
+            "registration_id": {
+              "type": "String"
+            }
           }
         }
       },
@@ -44,31 +104,337 @@
         "shape": {
           "type": "Record",
           "attributes": {
-            "organization_id": { "type": "String" },
-            "event_id": { "type": "String" },
-            "speaker_id": { "type": "String" }
+            "organization_id": {
+              "type": "String"
+            },
+            "event_id": {
+              "type": "String"
+            },
+            "speaker_id": {
+              "type": "String"
+            }
+          }
+        }
+      },
+      "Incident": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "organization_id": {
+              "type": "String"
+            },
+            "event_id": {
+              "type": "String"
+            },
+            "incident_id": {
+              "type": "String"
+            },
+            "severity": {
+              "type": "String"
+            }
+          }
+        }
+      },
+      "Approval": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "organization_id": {
+              "type": "String"
+            },
+            "event_id": {
+              "type": "String"
+            },
+            "approval_id": {
+              "type": "String"
+            },
+            "amount_inr": {
+              "type": "Long"
+            }
+          }
+        }
+      },
+      "Budget": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "organization_id": {
+              "type": "String"
+            },
+            "event_id": {
+              "type": "String"
+            }
+          }
+        }
+      },
+      "Document": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "organization_id": {
+              "type": "String"
+            },
+            "event_id": {
+              "type": "String"
+            },
+            "document_id": {
+              "type": "String"
+            }
           }
         }
       }
     },
     "actions": {
-      "ReadOperationalState": {},
-      "CreateInternalTask": {},
-      "DraftMessage": {},
-      "ScheduleReminder": {},
-      "SummarizeData": {},
-      "SendRoutineCommunication": {},
-      "UpdateEventMetadata": {},
-      "ProcessRefund": {},
-      "BookAccommodation": {},
-      "ConfirmSpeaker": {},
-      "CancelRegistration": {},
-      "ModifyPublishedEvent": {},
-      "GenerateTicket": {},
-      "CompleteCheckIn": {},
-      "CreateIncident": {},
-      "ResolveIncident": {},
-      "SendSpeakerFollowup": {}
+      "AccommodationCommitment": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "AcknowledgeIncident": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "AddIncidentComment": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "AllocateBudget": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "ApproveExpenditure": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "ArchiveEvent": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "AssignTask": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "AssignTeamMember": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "BookAccommodation": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "CancelRegistration": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "CompleteCheckIn": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "CompleteTask": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "ComputeEventHealth": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "ConfirmSpeaker": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "ContractSigning": {
+        "annotations": {
+          "riskTier": "NEVER"
+        }
+      },
+      "CreateEvent": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "CreateIncident": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "CreateInternalTask": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "CreateTeam": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "DecideApproval": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "DeleteAuditRecord": {
+        "annotations": {
+          "riskTier": "NEVER"
+        }
+      },
+      "DraftMessage": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "EscalateIncident": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "FinancialCommitment": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "GenerateDraft": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "GenerateEventBrief": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "GenerateTicket": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "ModifyAuthorizationPolicy": {
+        "annotations": {
+          "riskTier": "NEVER"
+        }
+      },
+      "ModifyPublishedEvent": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "ProcessRefund": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "ReadNotifications": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "ReadOperationalState": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "ReassignTask": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "RecordExpense": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "RequestApproval": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "ResolveIncident": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "RevokeTicket": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "ScheduleReminder": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "SearchEventDocuments": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "SendExternalSpeakerMessage": {
+        "annotations": {
+          "riskTier": "HIGH"
+        }
+      },
+      "SendInternalReminder": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "SendRoutineCommunication": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "SendSpeakerFollowup": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "SummarizeData": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "UpdateEventMetadata": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "UpdateIncident": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "UpdateSpeaker": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      },
+      "UpdateTask": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "UpdateTeam": {
+        "annotations": {
+          "riskTier": "LOW"
+        }
+      },
+      "UploadDocument": {
+        "annotations": {
+          "riskTier": "MEDIUM"
+        }
+      }
     }
   }
 }

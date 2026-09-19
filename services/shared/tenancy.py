@@ -64,10 +64,20 @@ def authorize_organization(event: dict[str, Any], organization_id: str) -> dict[
     response when it is not. Denials are logged with the caller's subject and
     the requested organization so cross-tenant attempts are auditable; no PII
     is included.
+
+    The `cognito:groups` claim carries both organization memberships and role groups
+    (`LEADER`, `TEAM_MEMBER`), so a bare group-membership test would let a caller pass a
+    role group name as an organization id and match it. Requiring the `ORG-` prefix on
+    the requested value closes that: role groups can never satisfy this check.
+
+    A malformed value is refused with the same FORBIDDEN response as a value the caller is
+    simply not a member of. Distinguishing them would tell an unauthenticated prober which
+    identifiers are well-formed, and the caller has no legitimate reason to care about the
+    difference: either way, they may not have this data.
     """
     allowed = get_caller_organizations(event)
 
-    if organization_id in allowed:
+    if organization_id.startswith("ORG-") and organization_id in allowed:
         return None
 
     logger.warning(
