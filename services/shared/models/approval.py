@@ -50,8 +50,25 @@ class Approval(DomainEntity):
     affected_resource_type: str = ""
     affected_resource_id: str = ""
 
+    # Financial impact. Zero means the request has no budget consequence, which is what
+    # the approval handler checks before touching the budget at all.
+    amount_inr: int = Field(default=0, ge=0, description="Whole rupees; 0 = non-financial")
+    currency: str = Field(default="INR", max_length=3)
+    budget_category: str = Field(default="", description="BudgetCategory value when financial")
+    budget_impact: str = Field(
+        default="", description="Human-readable effect, e.g. 'Remaining 75,000 -> 62,500'"
+    )
+
+    # Who asked. A team member may request; only a leader may decide.
+    requested_by: str = ""
+    requested_by_name: str = ""
+    requested_by_role: str = ""
+
     # Agent context
     agent_name: str = Field(default="", description="Which specialist agent requested this")
+    agent_recommendation: str = Field(
+        default="", description="What the agent advises the leader to do"
+    )
     workflow_execution_id: str = ""
     tool_name: str = ""
 

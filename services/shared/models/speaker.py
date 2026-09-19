@@ -51,13 +51,34 @@ class Speaker(DomainEntity):
     # Logistics
     travel_required: bool = False
     accommodation_required: bool = False
+    travel_origin: str = ""
+    accommodation_nights: int = Field(default=0, ge=0)
+    estimated_travel_cost: int = Field(default=0, ge=0, description="Whole rupees")
+    estimated_accommodation_cost: int = Field(default=0, ge=0, description="Whole rupees")
     travel_details: str = ""
     accommodation_details: str = ""
     special_requirements: str = ""
     availability_notes: str = ""
+    availability_confirmed: bool = False
+    session_time: str = Field(default="", description="Scheduled slot, ISO-8601 or free text")
 
     # Session readiness
     slides_submitted: bool = False
     av_requirements: str = ""
     is_backup: bool = False
     backup_for_speaker_id: str | None = None
+
+    def silent_hours(self, now: datetime) -> float:
+        """Hours since we last heard from this speaker after contacting them.
+
+        Returns 0.0 when the speaker has responded or has never been contacted, so
+        "silent" only ever means "we reached out and nothing came back". The 72-hour
+        follow-up rule is expressed against this rather than against ``invited_at``,
+        because a speaker who replied once and went quiet again should reset the clock.
+        """
+        if self.response_received_at is not None:
+            return 0.0
+        last_contact = self.last_contacted_at or self.invited_at
+        if last_contact is None:
+            return 0.0
+        return max(0.0, (now - last_contact).total_seconds() / 3600.0)
