@@ -46,3 +46,7 @@ htmlcov/
 
 # Logs
 *.log
+
+# Local working notes, not part of the project documentation
+challanged-faced-build.md
+faced-challenged.md

@@ -32,7 +32,17 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "T20"]
-ignore = ["E501"]
+ignore = [
+    "E501",
+    # UP042 wants `class X(StrEnum)` instead of `class X(str, Enum)`. Every enum in this
+    # codebase uses the `str, Enum` form deliberately and consistently, and switching is not a
+    # pure refactor: StrEnum members render as their bare value under `str()` and in f-strings,
+    # where `str, Enum` members render as `ClassName.MEMBER`. Those values reach log lines,
+    # audit `details` payloads and DynamoDB attributes, so a blanket change risks altering
+    # stored data and log formats for a stylistic gain. Enum values are written explicitly via
+    # `.value` throughout, which is what actually matters for correctness.
+    "UP042",
+]
 
 [tool.ruff.format]
 quote-style = "double"
