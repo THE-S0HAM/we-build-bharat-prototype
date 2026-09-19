@@ -1,6 +1,6 @@
 """Base domain model and cross-cutting types."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class DomainEntity(BaseModel):
@@ -17,7 +17,9 @@ class DomainEntity(BaseModel):
     Every entity is scoped to an organization for tenant isolation.
     """
 
-    organization_id: str = Field(..., min_length=1, description="Tenant boundary — every query must include this")
+    organization_id: str = Field(
+        ..., min_length=1, description="Tenant boundary — every query must include this"
+    )
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     created_by: str = Field(default="system")

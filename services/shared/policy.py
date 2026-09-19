@@ -1,4 +1,4 @@
-"""Cedar policy evaluation for OrbitOps.
+"""Cedar policy evaluation for CommunityOps.
 
 Evaluates Cedar policies to determine whether an action is allowed,
 requires approval, or is forbidden. This is the application-level
@@ -15,7 +15,6 @@ import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 

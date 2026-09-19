@@ -6,8 +6,6 @@ QR image generation, and PDF generation.
 
 import json
 
-import pytest
-
 from services.checkin.ticket_service import (
     generate_qr_image,
     generate_qr_payload,

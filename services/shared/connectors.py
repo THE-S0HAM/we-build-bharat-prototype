@@ -35,7 +35,7 @@ class RegistrationConnector(ABC):
     """Interface for registration data lookups.
 
     Implementations might target:
-    - DynamoDB (OrbitOps internal)
+    - DynamoDB (CommunityOps internal)
     - PostgreSQL (external event platform)
     - REST API (third-party registration SaaS)
     - CSV import (offline data)
@@ -74,7 +74,9 @@ class PaymentConnector(ABC):
     """
 
     @abstractmethod
-    def lookup_by_transaction_id(self, org_id: str, event_id: str, transaction_id: str) -> LookupResult:
+    def lookup_by_transaction_id(
+        self, org_id: str, event_id: str, transaction_id: str
+    ) -> LookupResult:
         """Lookup payment by transaction reference."""
         ...
 
@@ -105,7 +107,9 @@ class CalendarConnector(ABC):
     """Interface for calendar/scheduling operations."""
 
     @abstractmethod
-    def check_availability(self, event_id: str, speaker_id: str, proposed_time: str) -> LookupResult:
+    def check_availability(
+        self, event_id: str, speaker_id: str, proposed_time: str
+    ) -> LookupResult:
         """Check if a time slot is available for a speaker."""
         ...
 

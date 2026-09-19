@@ -18,7 +18,7 @@ from services.shared.dynamodb import DynamoDBRepository
 from services.shared.models.base import utc_now
 
 logger = logging.getLogger(__name__)
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -107,7 +107,9 @@ def _prepare_recommendation(event: dict, org_id: str, event_id: str, incident_id
     elif analysis.get("affected_resource_type") == "Speaker":
         recommendation = "No backup speakers available. Consider rescheduling the session or finding an emergency replacement."
     else:
-        recommendation = "Review the incident details and determine the appropriate course of action."
+        recommendation = (
+            "Review the incident details and determine the appropriate course of action."
+        )
 
     repo.update_item(
         org_id,
@@ -185,7 +187,7 @@ def _auto_resolve(event: dict, org_id: str, event_id: str, incident_id: str) -> 
     """Auto-resolve LOW/MEDIUM incidents without human approval."""
     repo = DynamoDBRepository(MAIN_TABLE)
     now = utc_now().isoformat()
-    analysis = event.get("analysis", {})
+    _analysis = event.get("analysis", {})  # Reserved for future use
 
     repo.update_item(
         org_id,

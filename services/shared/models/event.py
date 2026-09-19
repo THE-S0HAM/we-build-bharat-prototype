@@ -17,7 +17,7 @@ class EventStatus(str, Enum):
 
 
 class Event(DomainEntity):
-    """A community event managed by OrbitOps."""
+    """A community event managed by CommunityOps."""
 
     event_id: str = Field(..., min_length=1)
     name: str = Field(..., min_length=1, max_length=300)

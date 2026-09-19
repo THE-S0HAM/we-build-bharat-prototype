@@ -1,19 +1,15 @@
 """Tests for input validation and sanitization."""
 
-import pytest
-
 from services.shared.validation import (
     mask_email,
     mask_phone,
+    safe_log_context,
     sanitize_name,
     sanitize_text,
     validate_email,
-    validate_event_id,
-    validate_org_id,
     validate_phone,
     validate_registration_id,
     validate_search_input,
-    safe_log_context,
 )
 
 

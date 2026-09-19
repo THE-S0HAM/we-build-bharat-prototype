@@ -36,7 +36,9 @@ class Registration(DomainEntity):
     """
 
     event_id: str = Field(..., min_length=1)
-    registration_id: str = Field(..., min_length=1, description="Stable identity, e.g. REG-2026-004821")
+    registration_id: str = Field(
+        ..., min_length=1, description="Stable identity, e.g. REG-2026-004821"
+    )
     attendee_name: str = Field(..., min_length=1)
     attendee_email: str = Field(..., min_length=1)
     attendee_phone: str = ""
@@ -56,7 +58,9 @@ class PaymentReference(DomainEntity):
     """
 
     event_id: str = Field(..., min_length=1)
-    transaction_id: str = Field(..., min_length=1, description="Payment gateway transaction reference")
+    transaction_id: str = Field(
+        ..., min_length=1, description="Payment gateway transaction reference"
+    )
     registration_id: str = Field(..., min_length=1, description="Linked registration")
     amount: str = ""
     currency: str = "INR"

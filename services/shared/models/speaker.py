@@ -36,7 +36,9 @@ class Speaker(DomainEntity):
     status: SpeakerStatus = SpeakerStatus.IDENTIFIED
     topic: str = ""
     bio: str = ""
-    session_type: str = Field(default="TALK", description="TALK, WORKSHOP, PANEL, KEYNOTE, LIGHTNING")
+    session_type: str = Field(
+        default="TALK", description="TALK, WORKSHOP, PANEL, KEYNOTE, LIGHTNING"
+    )
     session_duration_minutes: int = Field(default=30, ge=5)
 
     # Outreach tracking

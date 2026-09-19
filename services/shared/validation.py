@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 # Safe patterns for identifiers — reject anything that doesn't match
 REGISTRATION_ID_PATTERN = re.compile(r"^REG-\d{4}-\d{4,8}$")
 EVENT_ID_PATTERN = re.compile(r"^EVT-[a-zA-Z0-9-]{3,40}$")
@@ -149,7 +148,15 @@ def safe_log_context(
     if action:
         ctx["action"] = action
     # Add extra fields but exclude known PII keys
-    pii_keys = {"email", "phone", "attendee_email", "attendee_phone", "payer_email", "name", "attendee_name"}
+    pii_keys = {
+        "email",
+        "phone",
+        "attendee_email",
+        "attendee_phone",
+        "payer_email",
+        "name",
+        "attendee_name",
+    }
     for k, v in extra.items():
         if k not in pii_keys:
             ctx[k] = v

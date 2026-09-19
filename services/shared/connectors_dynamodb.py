@@ -1,6 +1,6 @@
 """DynamoDB implementations of connector interfaces.
 
-These are the "internal" connectors used when OrbitOps is both the
+These are the "internal" connectors used when CommunityOps is both the
 registration system and the operational layer. For organizations using
 an external registration platform (KonfHub, Eventbrite, etc.), a
 different connector implementation would be swapped in.
@@ -12,18 +12,17 @@ import logging
 import os
 
 from boto3.dynamodb.conditions import Attr
-from botocore.exceptions import ClientError
 
 from services.shared.connectors import LookupResult, PaymentConnector, RegistrationConnector
 from services.shared.dynamodb import DynamoDBRepository
 
 logger = logging.getLogger(__name__)
 
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
 
 
 class DynamoDBRegistrationConnector(RegistrationConnector):
-    """Registration lookups against OrbitOps DynamoDB table.
+    """Registration lookups against CommunityOps DynamoDB table.
 
     Access patterns:
     - By registration ID: PK=orgId, SK=EVENT#{eventId}#REG#{regId}
@@ -122,7 +121,7 @@ class DynamoDBRegistrationConnector(RegistrationConnector):
 
 
 class DynamoDBPaymentConnector(PaymentConnector):
-    """Payment reference lookups against OrbitOps DynamoDB table.
+    """Payment reference lookups against CommunityOps DynamoDB table.
 
     Access patterns:
     - By transaction ID: GSI1PK=orgId#eventId, GSI1SK=TXN#{transactionId}
@@ -132,7 +131,9 @@ class DynamoDBPaymentConnector(PaymentConnector):
     def __init__(self, table_name: str | None = None):
         self.repo = DynamoDBRepository(table_name or MAIN_TABLE)
 
-    def lookup_by_transaction_id(self, org_id: str, event_id: str, transaction_id: str) -> LookupResult:
+    def lookup_by_transaction_id(
+        self, org_id: str, event_id: str, transaction_id: str
+    ) -> LookupResult:
         """Exact transaction lookup via GSI — O(1)."""
         try:
             items = self.repo.query_gsi(

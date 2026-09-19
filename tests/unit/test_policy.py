@@ -2,7 +2,6 @@
 
 from services.shared.policy import PolicyDecision, evaluate_policy
 
-
 ORG = "ORG-wemakedev"
 
 

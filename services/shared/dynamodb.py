@@ -1,6 +1,6 @@
 """DynamoDB repository layer.
 
-Provides typed, tenant-isolated access to OrbitOps operational data.
+Provides typed, tenant-isolated access to CommunityOps operational data.
 Every query includes organization_id as the partition key to enforce
 tenant boundaries at the data access level — not just in application logic.
 
@@ -13,7 +13,7 @@ import logging
 from typing import Any
 
 import boto3
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from services.shared.models.base import ErrorCategory
@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 class DynamoDBError(Exception):
     """Raised when a DynamoDB operation fails in a way the caller should handle."""
 
-    def __init__(self, message: str, category: ErrorCategory, details: dict[str, Any] | None = None):
+    def __init__(
+        self, message: str, category: ErrorCategory, details: dict[str, Any] | None = None
+    ):
         super().__init__(message)
         self.category = category
         self.details = details or {}
@@ -76,7 +78,9 @@ class DynamoDBRepository:
                     "Item already exists or condition not met",
                     ErrorCategory.DUPLICATE,
                 ) from e
-            logger.error("DynamoDB put_item failed: %s", code, extra={"table": self.table_name, "sk": sk})
+            logger.error(
+                "DynamoDB put_item failed: %s", code, extra={"table": self.table_name, "sk": sk}
+            )
             raise DynamoDBError(
                 "Database write failed",
                 ErrorCategory.INTERNAL_ERROR,
@@ -116,7 +120,8 @@ class DynamoDBRepository:
         """
         try:
             kwargs: dict[str, Any] = {
-                "KeyConditionExpression": Key("PK").eq(organization_id) & Key("SK").begins_with(sk_prefix),
+                "KeyConditionExpression": Key("PK").eq(organization_id)
+                & Key("SK").begins_with(sk_prefix),
                 "Limit": limit,
             }
             if filter_expression:
