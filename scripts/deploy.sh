@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy OrbitOps to AWS
+# Deploy CommunityOps to AWS
 # Usage: ./scripts/deploy.sh --stage dev [--seed]
 
 set -euo pipefail
@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "=== OrbitOps Deployment ==="
+echo "=== CommunityOps Deployment ==="
 echo "Stage: $STAGE"
 echo "Region: $REGION"
 echo ""
@@ -35,20 +35,46 @@ aws sts get-caller-identity --region "$REGION" > /dev/null || { echo "Error: Inv
 
 # Install Python dependencies
 echo "Installing Python dependencies..."
-pip install -r requirements.txt -q 2>/dev/null || pip install -e ".[dev]" -q
+pip install -e ".[dev]" -q
 
 # Run tests
 echo "Running tests..."
 PYTHONPATH=. python -m pytest tests/unit/ -q --tb=short
 
+# Every Lambda uses CodeUri: . so that `services`, `tools` and `agents` resolve
+# as top-level packages. SAM's Python builder copies the whole CodeUri tree and
+# has no exclude mechanism, so the frontend's node_modules (~117 MB) would be
+# packaged into every function and push the artifact past Lambda's 250 MB
+# unzipped limit. Move it aside for the build and always restore it.
+NODE_MODULES="apps/web/node_modules"
+NODE_MODULES_ASIDE="$(mktemp -d)/node_modules"
+MOVED_NODE_MODULES=false
+
+restore_node_modules() {
+    if [ "$MOVED_NODE_MODULES" = true ] && [ -d "$NODE_MODULES_ASIDE" ]; then
+        mv "$NODE_MODULES_ASIDE" "$NODE_MODULES"
+        MOVED_NODE_MODULES=false
+        echo "Restored $NODE_MODULES"
+    fi
+}
+trap restore_node_modules EXIT INT TERM
+
+if [ -d "$NODE_MODULES" ]; then
+    echo "Excluding $NODE_MODULES from the Lambda build artifact..."
+    mv "$NODE_MODULES" "$NODE_MODULES_ASIDE"
+    MOVED_NODE_MODULES=true
+fi
+
 # Build SAM application
 echo "Building SAM application..."
 sam build --region "$REGION"
 
+restore_node_modules
+
 # Deploy
 echo "Deploying to AWS..."
 sam deploy \
-    --stack-name "orbitops-${STAGE}" \
+    --stack-name "communityops-${STAGE}" \
     --region "$REGION" \
     --parameter-overrides "Stage=${STAGE}" \
     --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
@@ -60,7 +86,7 @@ sam deploy \
 echo ""
 echo "=== Deployment Outputs ==="
 aws cloudformation describe-stacks \
-    --stack-name "orbitops-${STAGE}" \
+    --stack-name "communityops-${STAGE}" \
     --region "$REGION" \
     --query "Stacks[0].Outputs[*].[OutputKey,OutputValue]" \
     --output table
@@ -68,7 +94,7 @@ aws cloudformation describe-stacks \
 # Seed demo data if requested
 if [ "$SEED" = true ]; then
     TABLE_NAME=$(aws cloudformation describe-stacks \
-        --stack-name "orbitops-${STAGE}" \
+        --stack-name "communityops-${STAGE}" \
         --region "$REGION" \
         --query "Stacks[0].Outputs[?OutputKey=='MainTableName'].OutputValue" \
         --output text)
