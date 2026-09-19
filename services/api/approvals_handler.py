@@ -14,9 +14,10 @@ from services.shared.api_response import error, success
 from services.shared.audit import create_audit_event
 from services.shared.dynamodb import DynamoDBRepository
 from services.shared.models.base import ErrorCategory, utc_now
+from services.shared.tenancy import authorize_organization
 
 logger = logging.getLogger(__name__)
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -53,6 +54,10 @@ def _list_approvals(event: dict[str, Any], event_id: str) -> dict[str, Any]:
     if not org_id or not event_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id and eventId are required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     repo = DynamoDBRepository(MAIN_TABLE)
     items = repo.query_gsi(
         index_name="GSI1",
@@ -72,8 +77,14 @@ def _decide_approval(event: dict[str, Any], event_id: str, approval_id: str) -> 
     if not org_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id is required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     if decision not in ("APPROVED", "DECLINED", "EDITED"):
-        return error(ErrorCategory.VALIDATION_ERROR, "decision must be APPROVED, DECLINED, or EDITED")
+        return error(
+            ErrorCategory.VALIDATION_ERROR, "decision must be APPROVED, DECLINED, or EDITED"
+        )
 
     repo = DynamoDBRepository(MAIN_TABLE)
     existing = repo.get_item(org_id, f"EVENT#{event_id}#APPROVAL#{approval_id}")
@@ -81,7 +92,9 @@ def _decide_approval(event: dict[str, Any], event_id: str, approval_id: str) -> 
         return error(ErrorCategory.NOT_FOUND, "Approval request not found")
 
     if existing.get("status") != "PENDING":
-        return error(ErrorCategory.CONFLICT, f"Approval already {existing.get('status', 'processed')}")
+        return error(
+            ErrorCategory.CONFLICT, f"Approval already {existing.get('status', 'processed')}"
+        )
 
     now = utc_now().isoformat()
     updates: dict[str, Any] = {
@@ -112,4 +125,6 @@ def _decide_approval(event: dict[str, Any], event_id: str, approval_id: str) -> 
         },
     )
 
-    return success({"approval_id": approval_id, "status": decision, "message": f"Approval {decision.lower()}"})
+    return success(
+        {"approval_id": approval_id, "status": decision, "message": f"Approval {decision.lower()}"}
+    )

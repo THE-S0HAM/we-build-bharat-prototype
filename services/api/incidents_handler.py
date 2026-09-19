@@ -16,9 +16,10 @@ from services.shared.api_response import error, success
 from services.shared.audit import create_audit_event
 from services.shared.dynamodb import DynamoDBRepository
 from services.shared.models.base import ErrorCategory, utc_now
+from services.shared.tenancy import authorize_organization
 
 logger = logging.getLogger(__name__)
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -57,6 +58,10 @@ def _list_incidents(event: dict[str, Any], event_id: str) -> dict[str, Any]:
     if not org_id or not event_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id and eventId are required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     repo = DynamoDBRepository(MAIN_TABLE)
     items = repo.query_by_pk(org_id, f"EVENT#{event_id}#INCIDENT#", limit=50)
     return success({"incidents": items, "count": len(items)})
@@ -69,6 +74,10 @@ def _create_incident(event: dict[str, Any], event_id: str) -> dict[str, Any]:
 
     if not org_id or not event_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id and eventId are required")
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     title = body.get("title", "").strip()
     if not title:
@@ -123,14 +132,25 @@ def _update_incident(event: dict[str, Any], event_id: str, incident_id: str) -> 
     if not org_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id is required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     repo = DynamoDBRepository(MAIN_TABLE)
     existing = repo.get_item(org_id, f"EVENT#{event_id}#INCIDENT#{incident_id}")
     if not existing:
         return error(ErrorCategory.NOT_FOUND, "Incident not found")
 
     allowed = [
-        "title", "description", "severity", "status", "impact_analysis",
-        "dependencies", "backup_options", "recommendation", "evidence",
+        "title",
+        "description",
+        "severity",
+        "status",
+        "impact_analysis",
+        "dependencies",
+        "backup_options",
+        "recommendation",
+        "evidence",
         "resolution_summary",
     ]
     updates = {k: body[k] for k in allowed if k in body}

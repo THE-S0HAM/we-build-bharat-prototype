@@ -15,9 +15,10 @@ from services.shared.api_response import error, success
 from services.shared.audit import create_audit_event
 from services.shared.dynamodb import DynamoDBRepository
 from services.shared.models.base import ErrorCategory, utc_now
+from services.shared.tenancy import authorize_organization
 
 logger = logging.getLogger(__name__)
-MAIN_TABLE = os.environ.get("MAIN_TABLE", "OrbitOps-Main-dev")
+MAIN_TABLE = os.environ.get("MAIN_TABLE", "CommunityOps-Main-dev")
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -59,6 +60,10 @@ def _list_events(event: dict[str, Any]) -> dict[str, Any]:
     if not org_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id is required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     repo = DynamoDBRepository(MAIN_TABLE)
     items = repo.query_by_pk(org_id, "EVENT#", limit=50)
 
@@ -71,6 +76,10 @@ def _get_event(event: dict[str, Any], event_id: str) -> dict[str, Any]:
     org_id = _get_org_id(event)
     if not org_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id is required")
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     repo = DynamoDBRepository(MAIN_TABLE)
     item = repo.get_item(org_id, f"EVENT#{event_id}")
@@ -87,6 +96,10 @@ def _create_event(event: dict[str, Any]) -> dict[str, Any]:
 
     if not org_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id is required")
+
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
 
     name = body.get("name", "").strip()
     if not name:
@@ -142,13 +155,28 @@ def _update_event(event: dict[str, Any], event_id: str) -> dict[str, Any]:
     if not org_id:
         return error(ErrorCategory.VALIDATION_ERROR, "organization_id is required")
 
+    denied = authorize_organization(event, org_id)
+    if denied:
+        return denied
+
     repo = DynamoDBRepository(MAIN_TABLE)
     existing = repo.get_item(org_id, f"EVENT#{event_id}")
     if not existing:
         return error(ErrorCategory.NOT_FOUND, "Event not found")
 
-    allowed_updates = ["name", "description", "status", "venue", "city", "start_date", "end_date",
-                       "timezone", "expected_attendees", "registration_open", "tags"]
+    allowed_updates = [
+        "name",
+        "description",
+        "status",
+        "venue",
+        "city",
+        "start_date",
+        "end_date",
+        "timezone",
+        "expected_attendees",
+        "registration_open",
+        "tags",
+    ]
     updates = {k: body[k] for k in allowed_updates if k in body}
     updates["updated_at"] = utc_now().isoformat()
     updates["updated_by"] = user_id
