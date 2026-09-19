@@ -1,4 +1,4 @@
-/* OrbitOps Design System — clean, operational, accessible */
+/* CommunityOps Design System — clean, operational, accessible */
 
 :root {
   --color-bg: #0f1117;
@@ -104,6 +104,20 @@ a:hover { color: var(--color-primary-hover); }
   padding: 24px 32px;
   overflow-y: auto;
   max-width: 1200px;
+}
+
+/* Mock/Demo mode indicator */
+.mock-mode-badge {
+  margin: 12px 16px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid var(--color-attention);
+  border-radius: var(--radius-sm);
+  color: var(--color-attention);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.5px;
 }
 
 /* Cards */
@@ -331,4 +345,109 @@ tr:hover td { background: var(--color-surface-hover); }
   .sidebar { display: none; }
   .main-content { padding: 16px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Sign-in */
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 32px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: var(--shadow);
+}
+
+.login-brand {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+
+.login-brand span {
+  display: block;
+  color: var(--color-text-muted);
+  font-weight: 400;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.login-intro {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin: 12px 0 20px;
+}
+
+.login-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.login-card .input {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.login-error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid var(--color-critical);
+  color: var(--color-critical);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+/* Signed-in account block in the sidebar */
+.sidebar-account {
+  margin: 12px 16px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-account-email {
+  font-size: 11px;
+  color: var(--color-text-dim);
+  word-break: break-all;
+}
+
+/* Visible keyboard focus — the default outline is invisible on this palette */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-primary-hover);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "orbitops-web",
+  "name": "communityops-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -12,6 +12,7 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "amazon-cognito-identity-js": "6.3.15",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.0.0"
