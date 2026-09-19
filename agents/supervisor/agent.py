@@ -1,10 +1,25 @@
-"""Supervisor Agent — the orchestrator.
+"""Strands front end for the CommunityOps agent.
 
-Understands operational intent, selects the appropriate specialist,
-coordinates multi-step work, aggregates results, and decides whether
-to request human approval.
+The deployed conversation runs through :mod:`agents.runtime`, a Bedrock Converse loop, for the
+bundle-size reason documented there. This module is the Strands Agents SDK path over the *same*
+tool registry, for local development and for anyone running the agent outside Lambda.
 
-Uses Strands Agents SDK with Amazon Bedrock.
+What changed and why it matters
+-------------------------------
+This factory previously constructed an ``Agent`` with ``tools=[]`` and a comment saying "tools
+registered below", with nothing below. Its system prompt advertised five capabilities of which
+two existed. Nothing in the repository called it. It was scaffolding that described a system
+rather than being one.
+
+It now builds its tools from :mod:`tools.community_ops` via
+:func:`agents.runtime.build_strands_tools`, so every call goes through
+``ToolRegistry.invoke`` and gets the identical validation, scope check, policy evaluation,
+approval gating and audit as the deployed path. There is one definition of what the agent can
+do, and neither front end can bypass it.
+
+A principal is required to build an agent, because the tool set depends on the caller's role.
+There is no such thing as a general-purpose CommunityOps agent: authority is part of its
+construction, not a filter applied to its output.
 """
 
 from __future__ import annotations
@@ -13,64 +28,76 @@ import logging
 import os
 from typing import Any
 
+from services.shared.principal import Principal
+
 logger = logging.getLogger(__name__)
 
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-20250514-v1:0")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
 
-SUPERVISOR_SYSTEM_PROMPT = """You are the CommunityOps Supervisor Agent — an AI operations coordinator for community-led events.
 
-Your role:
-1. Understand the operational intent from the user's message
-2. Select the appropriate specialist agent or tool
-3. Coordinate multi-step work
-4. Request human approval when required by policy
-5. Explain reasoning in concise operational language
+def create_supervisor_agent(
+    principal: Principal,
+    organization_id: str,
+    *,
+    event_id: str = "",
+    fun_mode: bool = False,
+    table_name: str | None = None,
+) -> Any:
+    """Build a Strands agent scoped to one principal.
 
-Specialists available:
-- CheckInOps: Ticket recovery, registration lookup, payment reconciliation, check-in
-- SpeakerOps: Speaker outreach, follow-ups, availability, requirements
-- TeamOps: Task management, deadlines, dependencies, escalation
-- AttendeeOps: Missing attendee info, dietary, accommodation, communication
-- IncidentOps: Risk detection, impact analysis, backup options, incident resolution
+    Returns ``None`` when ``strands-agents`` is not installed, which is the normal state inside
+    Lambda: the dependency is deliberately excluded from the deployment artifact, and the
+    Converse runtime is used there instead. Callers must handle ``None`` rather than assume an
+    agent came back.
 
-Fundamental rules:
-- NEVER invent or infer transactional facts. Use tools to look them up.
-- NEVER bypass policy checks.
-- ALWAYS request human approval for HIGH_RISK actions.
-- If evidence is insufficient, state uncertainty clearly.
-- Use tools for structured data. Use knowledge retrieval for policies/procedures.
-
-Agent loop: Observe → Retrieve → Reason → Policy check → Approval if needed → Execute → Verify → Audit → Re-evaluate
-"""
-
-
-def create_supervisor_agent() -> Any:
-    """Initialize the Supervisor Agent with Strands SDK.
-
-    Returns the configured agent instance. The caller invokes
-    agent(prompt) to run a conversation turn.
+    The system prompt and the tool catalogue both come from the shared runtime, so a Strands
+    session and a deployed chat turn are given the same instructions and the same capabilities.
     """
     try:
         from strands import Agent
         from strands.models.bedrock import BedrockModel
 
+        from agents.runtime import (
+            MAX_OUTPUT_TOKENS,
+            TEMPERATURE,
+            build_strands_tools,
+            build_system_prompt,
+        )
+
+        tools = build_strands_tools(
+            principal,
+            organization_id,
+            event_id=event_id,
+            table_name=table_name,
+        )
+
         model = BedrockModel(
             model_id=BEDROCK_MODEL_ID,
             region_name=BEDROCK_REGION,
+            temperature=TEMPERATURE,
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
 
         agent = Agent(
             model=model,
-            system_prompt=SUPERVISOR_SYSTEM_PROMPT,
-            tools=[],  # Tools registered below
+            system_prompt=build_system_prompt(principal, fun_mode=fun_mode),
+            tools=tools,
         )
 
+        logger.info(
+            "Built Strands agent",
+            extra={"role": principal.role.value, "tool_count": len(tools)},
+        )
         return agent
 
     except ImportError:
-        logger.warning("strands-agents not installed. Agent features unavailable.")
+        # Expected in Lambda. The Converse runtime in agents.runtime is the deployed path.
+        logger.info(
+            "strands-agents is not installed; use agents.runtime.run_turn instead, which is "
+            "what the deployed stack uses."
+        )
         return None
     except Exception:
-        logger.error("Failed to create Supervisor Agent", exc_info=True)
+        logger.error("Failed to build the Strands agent", exc_info=True)
         return None

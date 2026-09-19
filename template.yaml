@@ -15,6 +15,15 @@ Parameters:
   BedrockRegion:
     Type: String
     Default: us-east-1
+  QrSigningSecret:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >
+      HMAC secret for signing ticket QR codes. ticket_service reads QR_SECRET_KEY and falls
+      back to a development default when it is unset, which would mean production tickets
+      were signed with a value published in the source. Pass a real secret per deployment.
+      Left empty by default so a developer stack still works without configuration.
 
 Globals:
   Function:
@@ -30,6 +39,7 @@ Globals:
         EVENT_BUS_NAME: !Ref EventBus
         BEDROCK_MODEL_ID: !Ref BedrockModelId
         BEDROCK_REGION: !Ref BedrockRegion
+        QR_SECRET_KEY: !Ref QrSigningSecret
         POWERTOOLS_SERVICE_NAME: communityops
         LOG_LEVEL: INFO
     Architectures:
@@ -115,17 +125,33 @@ Resources:
           AttributeType: S
         - AttributeName: GSI1SK
           AttributeType: S
+        - AttributeName: GSI2PK
+          AttributeType: S
+        - AttributeName: GSI2SK
+          AttributeType: S
       KeySchema:
         - AttributeName: PK
           KeyType: HASH
         - AttributeName: SK
           KeyType: RANGE
       GlobalSecondaryIndexes:
+        # GSI1 answers "everything of one kind for one event, newest last".
         - IndexName: GSI1
           KeySchema:
             - AttributeName: GSI1PK
               KeyType: HASH
             - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # GSI2 answers status- and deadline-ordered queries ("open tasks, soonest
+        # deadline first") and "everything belonging to one user across events", which
+        # GSI1's event-scoped partition key cannot express.
+        - IndexName: GSI2
+          KeySchema:
+            - AttributeName: GSI2PK
+              KeyType: HASH
+            - AttributeName: GSI2SK
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
@@ -451,6 +477,30 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /events/{eventId}
             Method: PUT
+        ChangeLifecycle:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/lifecycle
+            Method: POST
+        ArchiveEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/archive
+            Method: POST
+        DuplicateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/duplicate
+            Method: POST
+        PrepareEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/prepare
+            Method: POST
 
   SpeakersCrudFunction:
     Type: AWS::Serverless::Function
@@ -484,6 +534,12 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /events/{eventId}/speakers/{speakerId}
             Method: PUT
+        DraftFollowup:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/speakers/{speakerId}/followup
+            Method: POST
 
   TasksCrudFunction:
     Type: AWS::Serverless::Function
@@ -517,6 +573,20 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /events/{eventId}/teams/{teamId}/tasks/{taskId}
             Method: PUT
+        # Event-wide task board. The console previously fanned out one request per team and
+        # flattened the results, so rendering one page took eight round trips.
+        GetAllEventTasks:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/tasks
+            Method: GET
+        ReassignTask:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams/{teamId}/tasks/{taskId}/reassign
+            Method: POST
 
   ApprovalsCrudFunction:
     Type: AWS::Serverless::Function
@@ -538,6 +608,18 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /events/{eventId}/approvals
             Method: GET
+        GetApproval:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/approvals/{approvalId}
+            Method: GET
+        RequestApproval:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/approvals
+            Method: POST
         DecideApproval:
           Type: Api
           Properties:
@@ -571,12 +653,42 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /events/{eventId}/incidents
             Method: POST
+        GetIncident:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/incidents/{incidentId}
+            Method: GET
         UpdateIncident:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /events/{eventId}/incidents/{incidentId}
             Method: PUT
+        ListComments:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/incidents/{incidentId}/comments
+            Method: GET
+        AddComment:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/incidents/{incidentId}/comments
+            Method: POST
+        ResolveIncident:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/incidents/{incidentId}/resolve
+            Method: POST
+        ReopenIncident:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/incidents/{incidentId}/reopen
+            Method: POST
 
   AuditLogFunction:
     Type: AWS::Serverless::Function
@@ -595,14 +707,20 @@ Resources:
             Path: /events/{eventId}/audit
             Method: GET
 
-  CommandCenterFunction:
+  # Operational overview. The command centre, event health, the attention list, the
+  # operations brief and workload all answer "what is the state of this event" from one
+  # EventSnapshot, so they share a function rather than each paying a cold start to run
+  # the same aggregation. Health is cached back onto the event record, hence Crud on Main.
+  OperationsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub communityops-api-command-center-${Stage}
-      Handler: services.api.command_center_handler.handler
+      FunctionName: !Sub communityops-api-operations-${Stage}
+      Handler: services.api.operations_handler.handler
       CodeUri: .
+      Timeout: 60
+      MemorySize: 512
       Policies:
-        - DynamoDBReadPolicy:
+        - DynamoDBCrudPolicy:
             TableName: !Ref MainTable
         - DynamoDBReadPolicy:
             TableName: !Ref AuditTable
@@ -612,6 +730,361 @@ Resources:
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /command-center
+            Method: GET
+        GetEventHealth:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/health
+            Method: GET
+        GetAttention:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/attention
+            Method: GET
+        GetBrief:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/brief
+            Method: GET
+        GetWorkload:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/workload
+            Method: GET
+
+  # ===================================================================
+  # Lambda Functions - Operations domain
+  # ===================================================================
+
+  TeamsCrudFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub communityops-api-teams-${Stage}
+      Handler: services.api.teams_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        GetTeams:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams
+            Method: GET
+        CreateTeam:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams
+            Method: POST
+        GetTeam:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams/{teamId}
+            Method: GET
+        UpdateTeam:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams/{teamId}
+            Method: PUT
+        GetMembers:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams/{teamId}/members
+            Method: GET
+        AddMember:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams/{teamId}/members
+            Method: POST
+        RemoveMember:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/teams/{teamId}/members/{userId}
+            Method: DELETE
+
+  BudgetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub communityops-api-budget-${Stage}
+      Handler: services.api.budget_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        GetBudget:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/budget
+            Method: GET
+        SetBudget:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/budget
+            Method: PUT
+        Allocate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/budget/allocations
+            Method: POST
+        ListExpenses:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/budget/expenses
+            Method: GET
+        RecordExpense:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/budget/expenses
+            Method: POST
+        ProjectBudget:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/budget/projection
+            Method: POST
+
+  # Documents need S3 to sign upload and download URLs. Bytes never pass through Lambda:
+  # a 15 MB venue contract would not fit inside API Gateway's request limit.
+  DocumentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub communityops-api-documents-${Stage}
+      Handler: services.api.documents_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - S3CrudPolicy:
+            BucketName: !Ref TicketBucket
+      Events:
+        ListDocuments:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/documents
+            Method: GET
+        RequestUpload:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/documents
+            Method: POST
+        GetDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/documents/{documentId}
+            Method: GET
+        ConfirmUpload:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/documents/{documentId}/confirm
+            Method: POST
+        DeleteDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/documents/{documentId}
+            Method: DELETE
+
+  NotificationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub communityops-api-notifications-${Stage}
+      Handler: services.api.notifications_handler.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+      Events:
+        ListNotifications:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /notifications
+            Method: GET
+        MarkRead:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /notifications/{notificationId}/read
+            Method: PUT
+        MarkAllRead:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /notifications/read-all
+            Method: PUT
+
+  TicketsAdminFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub communityops-api-tickets-${Stage}
+      Handler: services.api.tickets_handler.handler
+      CodeUri: .
+      # Ticket issuance renders a PDF and a QR image in-process, which needs more memory
+      # and time than a plain data endpoint.
+      Timeout: 60
+      MemorySize: 512
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - S3CrudPolicy:
+            BucketName: !Ref TicketBucket
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        ListTickets:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/tickets
+            Method: GET
+        GetTicket:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/tickets/{registrationId}
+            Method: GET
+        VerifyTransaction:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/tickets/{registrationId}/verify-transaction
+            Method: POST
+        IssueTicket:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/tickets/{registrationId}/issue
+            Method: POST
+        RevokeTicket:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/tickets/{registrationId}/revoke
+            Method: POST
+
+  # The simulation drives real mutations through the same services a person would use, so
+  # it needs the same write access and enough time to aggregate the event between steps.
+  SimulationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub communityops-api-simulation-${Stage}
+      Handler: services.api.simulation_handler.handler
+      CodeUri: .
+      Timeout: 60
+      MemorySize: 512
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+      Events:
+        GetSimulation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/simulation
+            Method: GET
+        AdvanceSimulation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /events/{eventId}/simulation
+            Method: POST
+
+  # ===================================================================
+  # Lambda Functions - The agent
+  # ===================================================================
+
+  # The only function permitted to invoke a model. A tool-use conversation makes several
+  # sequential Bedrock calls with DynamoDB reads between them, so it gets the longest
+  # timeout and the most memory in the stack.
+  AgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub communityops-api-agent-${Stage}
+      Handler: services.api.agent_handler.handler
+      CodeUri: .
+      Timeout: 120
+      MemorySize: 1024
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBus
+        # Scoped to the configured model rather than a wildcard. Both the bare model id and
+        # the inference-profile form are listed because Converse resolves to whichever the
+        # region provides, and a cross-region profile ARN lives under a different account
+        # path than the foundation model itself.
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource:
+                - !Sub arn:aws:bedrock:${BedrockRegion}::foundation-model/${BedrockModelId}
+                - !Sub arn:aws:bedrock:*::foundation-model/${BedrockModelId}
+                - !Sub arn:aws:bedrock:${BedrockRegion}:${AWS::AccountId}:inference-profile/*
+      Events:
+        Chat:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /agent/chat
+            Method: POST
+        Capabilities:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /agent/capabilities
+            Method: GET
+        Activity:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /agent/activity
+            Method: GET
+        Session:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /agent/sessions/{sessionId}
             Method: GET
 
   # ===================================================================
