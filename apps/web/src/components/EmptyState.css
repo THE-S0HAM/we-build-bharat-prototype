@@ -1,0 +1,40 @@
+/* ============================================================================
+ * EmptyState — the one empty pattern in the product (design.md §7, §7.1).
+ *
+ * Calm, no illustration, no surface of its own. The pattern deliberately draws
+ * no card chrome: an empty state usually replaces the contents of a `.card` or
+ * of a page region that already has a border, and a second border around it
+ * would read as an error. The caller places it; this file only sets rhythm,
+ * type and colour, all from `src/styles/tokens.css`.
+ * ==========================================================================*/
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-8) 0;
+}
+
+/* Not a heading element: an empty state can appear anywhere on the page, and
+   injecting an arbitrary heading level would break the single descending
+   heading order (requirement 15.1). Weight carries the hierarchy instead
+   (design.md §6.3). */
+.empty-state__title {
+  font-size: var(--fs-card-title);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.empty-state__description {
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  max-width: var(--drawer-w);
+}
+
+/* At most one action (design.md §7). Spacing only — the control itself is the
+   shared `.btn`, so there is still exactly one button height in the product
+   (requirement 12.11). */
+.empty-state__action {
+  margin-top: var(--sp-2);
+}

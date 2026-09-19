@@ -1,0 +1,49 @@
+/* ============================================================================
+ * DemoWorkspaceChip — "you are acting for the demo organization"
+ * (requirement 2.8, design.md A18).
+ *
+ * Deliberately NOT the Demo Mode badge's treatment. That badge warns that the
+ * data is fabricated, so it is amber on `--attention-soft` in the session group.
+ * This chip reports which real workspace the session belongs to, so it is
+ * neutral — muted text on `--bg-subtle` with a hairline border — and sits in the
+ * context group beside the event switcher. A visitor must be able to tell the
+ * two apart without reading them twice, and the product must not look like a
+ * development environment because of it.
+ *
+ * `Topbar.css` owns where the chip sits in the row; this file owns nothing
+ * outside the chip itself. Every value comes from `src/styles/tokens.css`.
+ * ==========================================================================*/
+
+.demo-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--sp-3);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}
+
+/* Medium rather than semibold: this is context, and the event switcher beside it
+   is the thing worth reading first. */
+.demo-chip__label {
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--ls-label);
+}
+
+/* What the chip means, announced but not drawn. Clipped rather than hidden with
+   `display: none`, which would remove it from the accessibility tree too.
+   `--border-w` is the smallest length token in the scale and stands in for the
+   classic 1px clip box; it is a mechanism, not a visual value. */
+.demo-chip__assistive {
+  position: absolute;
+  width: var(--border-w);
+  height: var(--border-w);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

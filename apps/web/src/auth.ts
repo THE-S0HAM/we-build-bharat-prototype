@@ -18,6 +18,8 @@ import {
   type CognitoUserSession,
 } from "amazon-cognito-identity-js";
 
+import { readMemberOrganizations } from "./lib/tokenClaims";
+
 const USER_POOL_ID = import.meta.env.VITE_COGNITO_USER_POOL_ID || "";
 const CLIENT_ID = import.meta.env.VITE_COGNITO_CLIENT_ID || "";
 
@@ -85,19 +87,16 @@ export async function isSignedIn(): Promise<boolean> {
   return (await getIdToken()) !== null;
 }
 
-/** Organizations the signed-in user may access, from the `cognito:groups` claim. */
+/**
+ * Organizations the signed-in user may access, from the `cognito:groups` claim.
+ *
+ * The claim parsing lives in `src/lib/tokenClaims.ts` as a pure function over a
+ * token string, because `src/api.ts` reads the same claim from the token it is
+ * already holding rather than re-entering the session for it. One parser, two
+ * entry points, no chance of the two reading a token differently.
+ */
 export async function getMemberOrganizations(): Promise<string[]> {
-  const token = await getIdToken();
-  if (!token) return [];
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1] ?? ""));
-    const groups = payload["cognito:groups"];
-    if (Array.isArray(groups)) return groups.map(String);
-    if (typeof groups === "string" && groups) return groups.split(",").map((g) => g.trim());
-    return [];
-  } catch {
-    return [];
-  }
+  return readMemberOrganizations(await getIdToken());
 }
 
 export function signOut(): void {

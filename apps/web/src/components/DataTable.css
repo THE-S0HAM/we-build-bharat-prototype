@@ -1,0 +1,138 @@
+/* ============================================================================
+ * DataTable — semantic table surface (requirements 15.2, 12.4).
+ *
+ * Every value comes from `src/styles/tokens.css`. No hex colour, no raw size.
+ * The only literal number is the `--bp-md` breakpoint, because CSS media
+ * queries cannot read custom properties (same constraint as `index.css`).
+ *
+ * These rules are self-sufficient on purpose: they do not depend on the legacy
+ * `table` / `th` / `td` element styles in `index.css`, which retire with the
+ * page cleanup. They also do not restyle those elements globally.
+ * ==========================================================================*/
+
+/* The table sits as one block on the single-column grid and carries the shared
+   section rhythm, so a page never adds its own spacing around it. The scroll
+   container keeps a wide table inside the content column instead of forcing
+   horizontal page scroll (requirement 14.7). */
+.data-table-scroll {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  margin-block-end: var(--sp-6);
+}
+
+/* Last surface in a section owns no trailing gap: the section does. */
+.data-table-scroll:last-child {
+  margin-block-end: 0;
+}
+
+.data-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+}
+
+/* Column labels share the baseline and label style used by card headers and
+   section titles (design.md §15.1). */
+.data-table thead th {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  white-space: nowrap;
+  /* The header rule separates data from its labels, so it has to be
+     perceivable: --border-strong, not --border. */
+  border-block-end: var(--border-w) solid var(--border-strong);
+}
+
+.data-table tbody th,
+.data-table tbody td {
+  padding: var(--sp-3);
+  border-block-end: var(--border-w) solid var(--border);
+  vertical-align: top;
+}
+
+/* The identity column is weighted rather than coloured, so the row's subject
+   reads first without relying on colour (requirement 15.10). */
+.data-table__row-header {
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.data-table tbody tr:last-child th,
+.data-table tbody tr:last-child td {
+  border-block-end: 0;
+}
+
+.data-table tbody tr:hover th,
+.data-table tbody tr:hover td {
+  background: var(--bg-subtle);
+}
+
+/* One alignment per column, applied to the header cell and every body cell from
+   the same source value. */
+.data-table [data-align="start"] {
+  text-align: start;
+}
+
+.data-table [data-align="center"] {
+  text-align: center;
+}
+
+.data-table [data-align="end"] {
+  text-align: end;
+  /* Right-aligned columns hold figures; equal-width digits keep them lined up. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Loading and empty rows keep the table's shape instead of replacing it. */
+.data-table__message-cell {
+  padding-block: var(--sp-6);
+  color: var(--text-secondary);
+  text-align: start;
+}
+
+.data-table__message-row:hover th,
+.data-table__message-row:hover td {
+  background: transparent;
+}
+
+.data-table__action-cell {
+  white-space: nowrap;
+}
+
+/* Responsive — below --bp-md (900px). design.md §Responsive Behaviour keeps the
+   primary columns and moves the rest into the drawer, so secondary columns are
+   withdrawn from the layout and the accessibility tree together
+   (requirement 14.7).
+
+   `display: none` is the right removal here, and only because of the contract a
+   `secondary` column carries: the same value is rendered by the page's drawer,
+   reached from the row action in the last column. A column whose value has
+   nowhere else to go stays `primary` — see the Check-In candidate list. */
+@media (max-width: 899px) {
+  .data-table [data-priority="secondary"] {
+    display: none;
+  }
+
+  .data-table thead th,
+  .data-table tbody th,
+  .data-table tbody td {
+    padding: var(--sp-2);
+  }
+
+  /* Column labels wrap instead of holding one line, so the remaining primary
+     columns fit the narrower measure rather than pushing the table into its
+     scroll container. */
+  .data-table thead th {
+    white-space: normal;
+  }
+
+  /* Touch target minimum below --bp-md (requirement 14.6). */
+  .data-table__action {
+    min-height: var(--touch-min);
+  }
+}

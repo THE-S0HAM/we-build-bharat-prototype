@@ -1,0 +1,191 @@
+/* ============================================================================
+ * ApprovalCard — one prepared action awaiting a person.
+ *
+ * Every value is a token from `src/styles/tokens.css` (requirement 12.1,
+ * design.md §6.3). No hex colour, no raw pixel size, no inline style.
+ *
+ * design.md §6.4 "Needs your decision": the `--attention` left rule and the
+ * `--attention-soft` tint. The treatment is identical for every pending approval
+ * whatever its risk level — the level is carried by `RiskIndicator`, which owns
+ * the two risk rows of that table. This file maps nothing to a colour
+ * (requirement 12.5).
+ *
+ * Card modifiers are written as two-class selectors (`.card.approval-card`)
+ * because `src/main.tsx` imports `App` before `index.css`, so the shared `.card`
+ * rule is emitted after this file and would otherwise win at equal specificity.
+ *
+ * Contrast, from the pairings verified in `tokens.css` (WCAG AA, 4.5:1):
+ *   --text-secondary on --bg-surface 7.87. `--attention-soft` is lighter than
+ *   --bg-subtle, so the same text holds above its verified 6.80 there.
+ * ==========================================================================*/
+
+.card.approval-card {
+  border-left: var(--sp-1) solid var(--attention);
+  background: var(--attention-soft);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* A settled card is no longer a decision surface, so it drops the attention
+   treatment and reads as a record. */
+.card.approval-card--settled {
+  border-left-color: var(--border-strong);
+  background: var(--bg-surface);
+}
+
+.approval-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-4);
+}
+
+.approval-card__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.approval-card__title {
+  font-size: var(--fs-card-title);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* "CommunityOps prepared this action. The decision is yours." */
+.approval-card__prepared {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+.approval-card__signals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.approval-card__description {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+/* --- Facts and evidence rows ---------------------------------------------- */
+
+.approval-card__facts,
+.approval-card__evidence-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+  font-size: var(--fs-support);
+}
+
+.approval-card__fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.approval-card__fact-label {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
+
+.approval-card__fact-value {
+  color: var(--text-primary);
+  overflow-wrap: break-word;
+}
+
+/* The prepared action, verbatim: the same string the Edit field carries. */
+.approval-card__action {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  word-break: break-word;
+}
+
+.approval-card__evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.approval-card__evidence-heading {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
+
+/* The count that stands in for every key the console does not recognise. */
+.approval-card__evidence-rest {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+.approval-card__financial {
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.approval-card__consequence {
+  font-size: var(--fs-support);
+  color: var(--text-primary);
+}
+
+/* --- The recorded decision, in place of the action row -------------------- */
+
+.approval-card__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.approval-card__result-headline {
+  font-size: var(--fs-support);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.approval-card__result-outcome {
+  font-size: var(--fs-support);
+  color: var(--text-primary);
+}
+
+.approval-card__result-attribution {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+/* Below --bp-sm (640px). Media queries cannot read custom properties, so the
+   breakpoint number repeats the `--bp-sm` token value. */
+@media (max-width: 639px) {
+  .approval-card__head {
+    flex-direction: column;
+  }
+
+  .approval-card__signals {
+    justify-content: flex-start;
+  }
+
+  .approval-card__facts,
+  .approval-card__evidence-rows {
+    grid-template-columns: 1fr;
+  }
+}

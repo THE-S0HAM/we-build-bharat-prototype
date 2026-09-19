@@ -1,69 +1,761 @@
-import { useEffect, useState } from "react";
-import { getIncidents } from "../api";
-import type { Incident } from "../types";
+/**
+ * IncidentOps — "What could disrupt the event, and what does CommunityOps
+ * propose?" (design.md §8.5, requirement 8).
+ *
+ * The page this replaced was a stack of incident cards, every card carrying its
+ * recommendation in a tinted panel. Two things were wrong with that. Cards in
+ * API order put a LOW-severity note above a CRITICAL one, and a page-level
+ * recommendation panel asks the leader to read the agent's reasoning before they
+ * have decided anything — the opposite of deciding on a prepared proposal.
+ *
+ * So:
+ *
+ *   - The list is a severity-ordered table, CRITICAL first, with resolved
+ *     incidents collapsed below the active ones (requirement 8.1). Every row
+ *     answers severity, affected resource, where it stands and what happens next
+ *     (requirement 8.2).
+ *   - One contextual visual: the severity distribution over the real counts, with
+ *     every number also stated in words beside it (requirements 8.3, 12.10).
+ *   - The recommendation lives **inside the drawer** and nowhere else
+ *     (requirement 8.5). It is not a headline card, and no row previews it. The
+ *     drawer is the product's one progressive-disclosure surface (requirement
+ *     12.6), so "View details" here behaves as it does on every other route.
+ *   - A pending approval is shown against an incident only when its
+ *     `affected_resource_id` matches the incident id, and the page says that the
+ *     link was derived that way (requirement 8.6). `approval_id` is not a field
+ *     the incidents endpoint accepts or returns, so there is no stored
+ *     relationship to render.
+ *
+ * Colour discipline: severity goes through `RiskIndicator`, which owns the four
+ * levels and reserves the red for CRITICAL. `Incident.status` is typed `string`
+ * rather than a union, so there is no status→colour domain for it — it renders as
+ * text, and the item's one operational state (requirement 12.9) renders through
+ * `StatusBadge`. This page maps nothing to a colour of its own.
+ *
+ * Everything the page decides about an incident — order, the next action, the
+ * analysis fields — is in `./incidentModel.ts`.
+ */
 
-const SEVERITY_BADGES: Record<string, string> = {
-  CRITICAL: "badge-critical",
-  HIGH: "badge-warning",
-  MEDIUM: "badge-attention",
-  LOW: "badge-completed",
-};
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
-export function IncidentCenter({ eventId }: { eventId: string }) {
-  const [incidents, setIncidents] = useState<Incident[]>([]);
+import { getApprovals, getIncidents } from "../api";
+import { ApiErrorState } from "../components/ApiErrorState";
+import { DataTable, type DataTableColumn } from "../components/DataTable";
+import { DistributionBar } from "../components/DistributionBar";
+import { Drawer } from "../components/Drawer";
+import { EmptyState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
+import { RiskIndicator } from "../components/RiskIndicator";
+import { SkeletonTable } from "../components/Skeleton";
+import { StatusBadge } from "../components/StatusBadge";
+import type { EventScopedPageProps } from "../event/EventScopedView";
+import { updateIncident, type IncidentUpdate } from "../incidentUpdate";
+import { formatAbsoluteTime, formatRelativeTime } from "../lib/formatTime";
+import { APPROVALS_PATH } from "../navConfig";
+import { useApiFailure } from "../session/useApiFailure";
+import type { Approval, Incident } from "../types";
+import {
+  affectedResourceLabel,
+  derivedApprovalsFor,
+  INCIDENT_STATUS_OPTIONS,
+  orderIncidents,
+  readIncidentAnalysis,
+  severityDistribution,
+  severityLabel,
+  SEVERITY_ORDER,
+  statusOptionLabel,
+  statusReading,
+  type IncidentImpact,
+  type SeverityShare,
+} from "./incidentModel";
+import "./IncidentCenter.css";
+
+/** The editable fields, as the change form holds them. */
+interface IncidentDraft {
+  readonly status: string;
+  readonly severity: Incident["severity"];
+}
+
+function draftOf(incident: Incident): IncidentDraft {
+  return { status: incident.status, severity: incident.severity };
+}
+
+/** Only what the user actually changed, so an untouched field is never sent. */
+function changesIn(incident: Incident, draft: IncidentDraft): IncidentUpdate {
+  const changes: IncidentUpdate = {};
+
+  if (draft.status !== incident.status) changes.status = draft.status;
+  if (draft.severity !== incident.severity) changes.severity = draft.severity;
+
+  return changes;
+}
+
+/** Reads a `<select>` value back into the severity union it came from. */
+function asSeverity(value: string): Incident["severity"] | null {
+  return SEVERITY_ORDER.find((severity) => severity === value) ?? null;
+}
+
+/** Where a change is in its lifecycle (requirement 13.11). */
+type SaveState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "saving" }
+  | { readonly kind: "saved" }
+  | { readonly kind: "failed"; readonly failure: unknown };
+
+export function IncidentCenter({ eventId }: EventScopedPageProps) {
+  const report = useApiFailure();
+
+  const [incidents, setIncidents] = useState<readonly Incident[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failure, setFailure] = useState<unknown>(null);
 
-  useEffect(() => {
-    getIncidents(eventId)
-      .then((r) => setIncidents(r.incidents))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [eventId]);
+  /**
+   * Pending approvals for the event, for the derived linkage only. Region-scoped:
+   * its own failure state, so the incident list stays usable when just this
+   * request failed (requirement 13.8).
+   */
+  const [approvals, setApprovals] = useState<readonly Approval[]>([]);
+  const [approvalFailure, setApprovalFailure] = useState<unknown>(null);
 
-  if (loading) return <p>Loading incidents...</p>;
+  const [openIncidentId, setOpenIncidentId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<IncidentDraft | null>(null);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  const [resolvedOpen, setResolvedOpen] = useState(false);
+
+  const statusFieldId = useId();
+  const severityFieldId = useId();
+  const resolvedRegionId = useId();
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setFailure(null);
+
+    getIncidents(eventId).then(
+      (response) => {
+        setIncidents(response.incidents);
+        setLoading(false);
+      },
+      (error: unknown) => {
+        setFailure(report(error));
+        setLoading(false);
+      },
+    );
+  }, [eventId, report]);
+
+  useEffect(load, [load]);
+
+  const loadApprovals = useCallback(() => {
+    setApprovalFailure(null);
+
+    getApprovals(eventId).then(
+      (response) => {
+        setApprovals(response.approvals);
+      },
+      (error: unknown) => {
+        setApprovals([]);
+        setApprovalFailure(report(error));
+      },
+    );
+  }, [eventId, report]);
+
+  useEffect(loadApprovals, [loadApprovals]);
+
+  const { active, resolved } = useMemo(() => orderIncidents(incidents), [incidents]);
+  const distribution = useMemo(() => severityDistribution(incidents), [incidents]);
+
+  const openIncident = useMemo(
+    () => incidents.find((incident) => incident.incident_id === openIncidentId) ?? null,
+    [incidents, openIncidentId],
+  );
+
+  const openDetails = useCallback((incident: Incident) => {
+    setOpenIncidentId(incident.incident_id);
+    setDraft(draftOf(incident));
+    setSave({ kind: "idle" });
+  }, []);
+
+  const closeDetails = useCallback(() => {
+    setOpenIncidentId(null);
+    setDraft(null);
+    setSave({ kind: "idle" });
+  }, []);
+
+  /** Any edit puts the form back in an editable state, clearing the last result. */
+  const editDraft = useCallback((change: Partial<IncidentDraft>) => {
+    setDraft((current) => (current === null ? current : { ...current, ...change }));
+    setSave((current) => (current.kind === "saving" ? current : { kind: "idle" }));
+  }, []);
+
+  const pendingChanges = useMemo<IncidentUpdate>(
+    () => (openIncident === null || draft === null ? {} : changesIn(openIncident, draft)),
+    [openIncident, draft],
+  );
+  const hasChanges = Object.keys(pendingChanges).length > 0;
+
+  const submitChanges = useCallback(() => {
+    if (openIncident === null || !hasChanges) {
+      return;
+    }
+
+    const incidentId = openIncident.incident_id;
+    setSave({ kind: "saving" });
+
+    updateIncident(eventId, incidentId, pendingChanges).then(
+      () => {
+        // The endpoint answers with an acknowledgement, not the record, so the row
+        // is updated from the change that was accepted — never from a value this
+        // page guessed at (requirement 8.8).
+        setIncidents((current) =>
+          current.map((incident) =>
+            incident.incident_id === incidentId ? { ...incident, ...pendingChanges } : incident,
+          ),
+        );
+        setSave({ kind: "saved" });
+      },
+      (error: unknown) => {
+        const reported = report(error, { refresh: load });
+        setSave(reported === null ? { kind: "idle" } : { kind: "failed", failure: reported });
+      },
+    );
+  }, [eventId, hasChanges, load, openIncident, pendingChanges, report]);
+
+  const columns = useMemo<readonly DataTableColumn<Incident>[]>(
+    () => [
+      {
+        key: "incident",
+        header: "Incident",
+        rowHeader: true,
+        cell: (incident) => (
+          <span className="cell-stack">
+            <span className="cell-stack__primary">{incident.title}</span>
+            <span className="cell-stack__meta">
+              Detected {formatRelativeTime(incident.detected_at)}
+            </span>
+          </span>
+        ),
+      },
+      {
+        key: "severity",
+        header: "Severity",
+        // RiskIndicator always renders the level as text, so severity survives
+        // without colour (requirement 15.10).
+        cell: (incident) => <RiskIndicator level={incident.severity} />,
+      },
+      {
+        key: "affected",
+        header: "Affected resource",
+        priority: "secondary",
+        cell: (incident) => affectedResourceLabel(incident) ?? "Not recorded",
+      },
+      {
+        key: "status",
+        header: "Incident status",
+        // Text, not a badge: `Incident.status` is typed `string` in
+        // `src/types.ts`, so `StatusBadge` has no domain for it and this page is
+        // not allowed to invent a colour mapping (requirement 12.5).
+        cell: (incident) => (
+          <span className="incident-status">{statusReading(incident).label}</span>
+        ),
+      },
+      {
+        key: "next",
+        header: "Next action",
+        cell: (incident) => {
+          const reading = statusReading(incident);
+
+          return (
+            <span className="incident-next">
+              <StatusBadge domain="operational" status={reading.operationalState} />
+              <span className="incident-next__action">{reading.nextAction}</span>
+            </span>
+          );
+        },
+      },
+    ],
+    [],
+  );
+
+  const rowAction = useMemo(
+    () => ({
+      label: "View details",
+      onSelect: openDetails,
+      accessibleLabel: (incident: Incident) => `View details for ${incident.title}`,
+    }),
+    [openDetails],
+  );
+
+  const analysis = openIncident === null ? null : readIncidentAnalysis(openIncident);
+  const openReading = openIncident === null ? null : statusReading(openIncident);
+  const derivedApprovals =
+    openIncident === null ? [] : derivedApprovalsFor(openIncident, approvals);
 
   return (
-    <div>
-      <h1 className="page-title">Incident Center</h1>
-      <p className="page-subtitle">{incidents.length} incident{incidents.length !== 1 ? "s" : ""}</p>
+    <div className="page incident-ops">
+      <PageHeader
+        title="IncidentOps"
+        context={
+          loading || failure !== null
+            ? "What could disrupt this event."
+            : `${active.length} active ${active.length === 1 ? "incident" : "incidents"}. CommunityOps has a proposal ready for each one it can act on.`
+        }
+      />
 
-      {incidents.length === 0 && <div className="card"><p style={{ color: "var(--color-text-muted)" }}>No active incidents. All clear.</p></div>}
+      {failure !== null && <ApiErrorState error={failure} onRetry={load} />}
 
-      {incidents.map((inc) => (
-        <div key={inc.incident_id} className="card" style={{ borderLeftWidth: 3, borderLeftColor: inc.severity === "CRITICAL" ? "var(--color-critical)" : inc.severity === "HIGH" ? "var(--color-warning)" : "var(--color-border)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-            <div>
-              <h3 style={{ fontSize: 16, marginBottom: 4 }}>{inc.title}</h3>
-              <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>{inc.incident_id} · Detected {new Date(inc.detected_at).toLocaleTimeString()}</p>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <span className={`badge ${SEVERITY_BADGES[inc.severity] || ""}`}>{inc.severity}</span>
-              <span className="badge badge-primary">{inc.status.replace(/_/g, " ")}</span>
-            </div>
-          </div>
+      {failure === null && loading && (
+        <SkeletonTable rows={4} columns={5} label="Getting the latest incident state…" />
+      )}
 
-          <p style={{ marginBottom: 12 }}>{inc.description}</p>
+      {failure === null && !loading && incidents.length === 0 && (
+        <EmptyState title="No incidents for this event." />
+      )}
 
-          {inc.affected_resource_type && (
-            <p style={{ fontSize: 13, color: "var(--color-text-muted)", marginBottom: 8 }}>
-              Affects: <strong>{inc.affected_resource_type}</strong> {inc.affected_resource_id}
+      {failure === null && !loading && incidents.length > 0 && (
+        <>
+          <SeverityDistribution
+            segments={distribution}
+            total={incidents.length}
+            resolvedCount={resolved.length}
+          />
+
+          <section className="page-section incident-section" aria-labelledby="incident-active-heading">
+            <h2 className="page-section__heading" id="incident-active-heading">
+              Active
+              <span className="page-section__count">{active.length}</span>
+            </h2>
+            <p className="page-section__description">
+              Most severe first. Open one to see what CommunityOps proposes.
             </p>
-          )}
 
-          {inc.recommendation && (
-            <div style={{ background: "var(--color-bg)", padding: 12, borderRadius: 4, marginBottom: 12, fontSize: 14 }}>
-              <strong style={{ fontSize: 12, color: "var(--color-text-muted)" }}>Recommendation:</strong>
-              <p style={{ marginTop: 4 }}>{inc.recommendation}</p>
+            {active.length === 0 ? (
+              <p className="page-section__empty">
+                Nothing active. Every incident for this event is resolved.
+              </p>
+            ) : (
+              <DataTable
+                label="Active incidents"
+                columns={columns}
+                rows={active}
+                rowKey={(incident) => incident.incident_id}
+                rowAction={rowAction}
+              />
+            )}
+          </section>
+
+          {resolved.length > 0 && (
+            <section className="page-section incident-section" aria-labelledby="incident-resolved-heading">
+              <div className="page-section__header">
+                <h2 className="page-section__heading" id="incident-resolved-heading">
+                  Resolved
+                  <span className="page-section__count">{resolved.length}</span>
+                </h2>
+
+                {/* Collapsed below the active list (requirement 8.1). This is a
+                    section toggle over rows the distribution already counts, not
+                    a second detail surface: a record's own detail is only ever
+                    the shared `Drawer` (requirement 12.6). */}
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  aria-expanded={resolvedOpen}
+                  aria-controls={resolvedRegionId}
+                  onClick={() => {
+                    setResolvedOpen((open) => !open);
+                  }}
+                >
+                  {resolvedOpen ? "Hide resolved" : `Show ${resolved.length} resolved`}
+                </button>
+              </div>
+
+              <div id={resolvedRegionId}>
+                {resolvedOpen ? (
+                  <DataTable
+                    label="Resolved incidents"
+                    columns={columns}
+                    rows={resolved}
+                    rowKey={(incident) => incident.incident_id}
+                    rowAction={rowAction}
+                  />
+                ) : (
+                  <p className="page-section__description">
+                    {resolved.length === 1
+                      ? "1 resolved incident is kept out of the way."
+                      : `${resolved.length} resolved incidents are kept out of the way.`}
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+        </>
+      )}
+
+      {openIncident !== null && analysis !== null && openReading !== null && draft !== null && (
+        <Drawer
+          open
+          onClose={closeDetails}
+          title={openIncident.title}
+          description={openIncident.incident_id}
+        >
+          <p className="drawer-description">{openIncident.description}</p>
+
+          <dl className="detail-list">
+            <div className="detail-list__row">
+              <dt>Severity</dt>
+              <dd>
+                <RiskIndicator level={openIncident.severity} />
+              </dd>
             </div>
+            <div className="detail-list__row">
+              <dt>Incident status</dt>
+              <dd>
+                <span className="incident-status">{openReading.label}</span>
+              </dd>
+            </div>
+            <div className="detail-list__row">
+              <dt>CommunityOps</dt>
+              <dd>
+                <StatusBadge
+                  domain="operational"
+                  status={openReading.operationalState}
+                  detail={openReading.nextAction}
+                />
+              </dd>
+            </div>
+            <div className="detail-list__row">
+              <dt>Affected resource</dt>
+              <dd>{affectedResourceLabel(openIncident) ?? "Not recorded"}</dd>
+            </div>
+            <div className="detail-list__row">
+              <dt>Detected</dt>
+              <dd>{formatAbsoluteTime(openIncident.detected_at)}</dd>
+            </div>
+            {openIncident.resolved_at !== undefined && (
+              <div className="detail-list__row">
+                <dt>Resolved</dt>
+                <dd>{formatAbsoluteTime(openIncident.resolved_at)}</dd>
+              </div>
+            )}
+          </dl>
+
+          {/* The proposal, reachable only from here (requirement 8.5). */}
+          <section className="drawer-section" aria-labelledby="incident-proposal-heading">
+            <h3 className="drawer-heading" id="incident-proposal-heading">
+              What CommunityOps proposes
+            </h3>
+
+            {openIncident.recommendation.trim() === "" ? (
+              <p className="incident-proposal__empty">
+                CommunityOps has not proposed a response yet.
+              </p>
+            ) : (
+              <>
+                <p className="incident-proposal__body">{openIncident.recommendation}</p>
+                <p className="incident-proposal__state">
+                  Proposal state: <strong>{openReading.label}</strong>. {openReading.nextAction}
+                </p>
+              </>
+            )}
+
+            <h4 className="drawer-subheading">Backup options</h4>
+            {openIncident.backup_options.length === 0 ? (
+              <p className="incident-proposal__empty">No backup options recorded.</p>
+            ) : (
+              <ul className="incident-list" aria-label="Backup options">
+                {openIncident.backup_options.map((option) => (
+                  <li className="incident-list__item" key={option}>
+                    {option}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="drawer-section" aria-labelledby="incident-impact-heading">
+            <h3 className="drawer-heading" id="incident-impact-heading">
+              Impact analysis
+            </h3>
+            <ImpactAnalysis impact={analysis.impact} />
+
+            <h4 className="drawer-subheading">Dependencies</h4>
+            {analysis.dependencies.length === 0 ? (
+              <p className="incident-analysis__empty">
+                No other resources are recorded as affected.
+              </p>
+            ) : (
+              <ul className="incident-list" aria-label="Dependencies">
+                {analysis.dependencies.map((dependency) => (
+                  <li className="incident-list__item" key={dependency}>
+                    {dependency}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {analysis.resolutionSummary !== null && (
+            <section className="drawer-section" aria-labelledby="incident-resolution-heading">
+              <h3 className="drawer-heading" id="incident-resolution-heading">
+                How it was resolved
+              </h3>
+              <p className="incident-analysis__body">{analysis.resolutionSummary}</p>
+            </section>
           )}
 
-          {inc.backup_options.length > 0 && (
-            <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
-              Backup options: {inc.backup_options.join(", ")}
-            </p>
-          )}
-        </div>
-      ))}
+          <DerivedApprovals
+            approvals={derivedApprovals}
+            failure={approvalFailure}
+            onRetry={loadApprovals}
+          />
+
+          <form
+            className="drawer-section"
+            aria-labelledby="incident-form-heading"
+            onSubmit={(formEvent) => {
+              formEvent.preventDefault();
+              submitChanges();
+            }}
+          >
+            <h3 className="drawer-heading" id="incident-form-heading">
+              Record a change
+            </h3>
+
+            {/* One `disabled` on the group locks every related control while the
+                change is in flight (requirement 13.11). */}
+            <fieldset className="form-fields" disabled={save.kind === "saving"}>
+              <legend className="form-legend">
+                Where this incident stands, and how severe it is. CommunityOps&apos; own analysis
+                stays as it recorded it.
+              </legend>
+
+              <div className="form-field">
+                <label className="form-label" htmlFor={statusFieldId}>
+                  Incident status
+                </label>
+                <select
+                  className="input"
+                  id={statusFieldId}
+                  value={draft.status}
+                  onChange={(changeEvent) => {
+                    editDraft({ status: changeEvent.target.value });
+                  }}
+                >
+                  {/* A status the backend returned that is not one of the nine
+                      declared values stays selectable, so opening the form cannot
+                      silently rewrite it. */}
+                  {INCIDENT_STATUS_OPTIONS.includes(draft.status) ? null : (
+                    <option value={draft.status}>{statusOptionLabel(draft.status)}</option>
+                  )}
+                  {INCIDENT_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {statusOptionLabel(status)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="form-label" htmlFor={severityFieldId}>
+                  Severity
+                </label>
+                <select
+                  className="input"
+                  id={severityFieldId}
+                  value={draft.severity}
+                  onChange={(changeEvent) => {
+                    const severity = asSeverity(changeEvent.target.value);
+                    if (severity !== null) {
+                      editDraft({ severity });
+                    }
+                  }}
+                >
+                  {SEVERITY_ORDER.map((severity) => (
+                    <option key={severity} value={severity}>
+                      {severityLabel(severity)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </fieldset>
+
+            {/* The action row is replaced by the result in place, and the result is
+                announced politely (requirements 13.11, 15.7). */}
+            <div className="form-actions" role="status">
+              {save.kind === "saved" ? (
+                <p className="form-result">
+                  Change saved. This incident&apos;s row is up to date.
+                </p>
+              ) : (
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={save.kind === "saving" || !hasChanges}
+                >
+                  {save.kind === "saving" ? "Saving…" : "Save change"}
+                </button>
+              )}
+            </div>
+
+            {save.kind === "failed" && <ApiErrorState error={save.failure} context="action" />}
+          </form>
+        </Drawer>
+      )}
     </div>
+  );
+}
+
+/**
+ * The page's one contextual visual (requirements 8.3, 12.10): how the event's
+ * incidents are distributed across the four severity levels, from the real
+ * counts.
+ *
+ * The strip, the legend and the text alternative are the shared
+ * `DistributionBar`, the same component SpeakerOps and TeamOps draw theirs with.
+ * This function supplies only the real counts, the four severity words and the
+ * sentence that states the whole thing; it owns no geometry and no chrome. The
+ * four fills live in `IncidentCenter.css`, keyed off `data-segment`, and their
+ * escalation mirrors design.md §6.4 — neutral, then attention, then the red only
+ * at CRITICAL.
+ */
+function SeverityDistribution({
+  segments,
+  total,
+  resolvedCount,
+}: {
+  segments: readonly SeverityShare[];
+  total: number;
+  resolvedCount: number;
+}) {
+  const counted = segments
+    .map((segment) => `${segment.count} ${segment.label.toLowerCase()}`)
+    .join(", ");
+  const resolvedSentence =
+    resolvedCount === 0
+      ? "None are resolved yet."
+      : resolvedCount === 1
+        ? "1 of them is resolved."
+        : `${resolvedCount} of them are resolved.`;
+
+  return (
+    <DistributionBar
+      heading="Severity distribution"
+      headingId="incident-severity-heading"
+      segments={segments.map((segment) => ({
+        id: segment.severity,
+        label: segment.label,
+        count: segment.count,
+      }))}
+      sentence={`${total} ${total === 1 ? "incident" : "incidents"}: ${counted}. ${resolvedSentence}`}
+    />
+  );
+}
+
+/**
+ * `impact_analysis` as something a person can read.
+ *
+ * The workflow writes this field with `json.dumps`, so it is often a JSON object.
+ * Raw JSON is never rendered (A11): recognised keys become labelled rows, and
+ * everything else CommunityOps recorded is counted so the reader knows the
+ * console is not showing all of it. `./incidentModel.ts` does the reading.
+ */
+function ImpactAnalysis({ impact }: { impact: IncidentImpact }) {
+  if (impact.kind === "absent") {
+    return <p className="incident-analysis__empty">CommunityOps has not recorded an impact analysis.</p>;
+  }
+
+  if (impact.kind === "prose") {
+    return <p className="incident-analysis__body">{impact.text}</p>;
+  }
+
+  return (
+    <>
+      {impact.rows.length === 0 ? (
+        <p className="incident-analysis__empty">
+          CommunityOps recorded an impact analysis in a form this console does not display.
+        </p>
+      ) : (
+        <dl className="detail-list">
+          {impact.rows.map((row) => (
+            <div className="detail-list__row" key={row.key}>
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {impact.undisplayedCount > 0 && impact.rows.length > 0 && (
+        <p className="incident-analysis__counted">
+          {impact.undisplayedCount === 1
+            ? "1 further detail was recorded that this console does not display."
+            : `${impact.undisplayedCount} further details were recorded that this console does not display.`}
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * The derived approval linkage (requirement 8.6).
+ *
+ * `approval_id` is not an allowed field on `PUT /events/{id}/incidents/{id}` and
+ * the incidents response carries no approval reference, so nothing links these
+ * two records in the data. The match is made here, on
+ * `affected_resource_id`, and the copy says so: presenting a computed match as a
+ * recorded relationship would be the console claiming a fact the backend has not
+ * established.
+ */
+function DerivedApprovals({
+  approvals,
+  failure,
+  onRetry,
+}: {
+  approvals: readonly Approval[];
+  failure: unknown;
+  onRetry: () => void;
+}) {
+  return (
+    <section className="drawer-section" aria-labelledby="incident-derived-heading">
+      <h3 className="drawer-heading" id="incident-derived-heading">
+        Related approval
+      </h3>
+
+      {failure !== null && <ApiErrorState error={failure} onRetry={onRetry} />}
+
+      {failure === null && approvals.length === 0 && (
+        <p className="incident-derived__empty">
+          No pending approval names this incident as its affected resource.
+        </p>
+      )}
+
+      {failure === null && approvals.length > 0 && (
+        <>
+          <p className="incident-derived__note">
+            Derived: incidents carry no stored approval reference, so this match was made by
+            comparing each pending approval&apos;s affected resource with this incident&apos;s
+            identifier.
+          </p>
+
+          <ul className="incident-derived__list">
+            {approvals.map((approval) => (
+              <li className="incident-derived__item" key={approval.approval_id}>
+                <span className="incident-derived__title">{approval.title}</span>
+                <span className="incident-derived__states">
+                  <StatusBadge domain="approval" status={approval.status} />
+                  <RiskIndicator level={approval.risk_level} />
+                </span>
+                <span className="incident-derived__agent">
+                  Raised by CommunityOps as {approval.agent_name}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <Link className="incident-derived__link" to={APPROVALS_PATH}>
+            Go to Approvals
+          </Link>
+        </>
+      )}
+    </section>
   );
 }

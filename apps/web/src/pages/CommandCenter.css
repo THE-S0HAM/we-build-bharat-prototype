@@ -1,0 +1,105 @@
+/* ============================================================================
+ * Command Center — page-scoped rules (design.md §8.1, requirement 12.2).
+ *
+ * The page owns rhythm and nothing else: the card language, the badge
+ * treatment, the empty and error patterns and the decision surface all come
+ * from shared components, which is what makes this route look like every other
+ * one (requirement 12.4).
+ *
+ * Every value is a token from `src/styles/tokens.css`. The `.stats-grid` and
+ * `.stat-card` rules this page used to depend on are not referenced any more:
+ * design.md §8.1 lists the stat-card grid under "Not present".
+ * ==========================================================================*/
+
+/* The page's vertical rhythm is the shared `.page` class's, applied alongside
+   `.command-center` in the page. This file defines no frame and no gap of its
+   own (requirement 12.4). */
+
+/* --- Greeting context line ---------------------------------------------- */
+
+/* The two halves of the context line: the organization being acted for, then
+   the watched-event count. Summary metrics live here and in the visual, and
+   nowhere else on the page (requirement 4.10). */
+.command-center__organization {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.command-center__organization::after {
+  content: "·";
+  margin: 0 var(--sp-2);
+  color: var(--text-muted);
+  font-weight: var(--fw-regular);
+}
+
+.command-center__watched {
+  color: var(--text-secondary);
+}
+
+/* --- Announcements ------------------------------------------------------ */
+
+/* The live region for decision results (requirement 15.8). Empty until a
+   decision resolves, and it occupies no space until then. */
+.command-center__announcement:empty {
+  display: none;
+}
+
+.command-center__announcement {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--brand-soft);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--brand-strong);
+}
+
+/* --- The decision region ----------------------------------------------- */
+
+.command-center__decision {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* The recorded decision, in the action row's place (requirement 13.11). It
+   takes the whole row so the result is not read as another control. */
+.command-center__result {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  background: var(--brand-soft);
+  border-radius: var(--radius-sm);
+}
+
+.command-center__result-headline {
+  margin: 0;
+  font-size: var(--fs-card-title);
+  font-weight: var(--fw-semibold);
+  color: var(--brand-strong);
+}
+
+.command-center__result-outcome {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--text-primary);
+}
+
+.command-center__result-attribution {
+  margin: 0;
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+/* --- Loading ----------------------------------------------------------- */
+
+/* The three blocks the page resolves into: decision surface, visual, handled
+   strip (design.md §8.1). */
+.command-center__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}

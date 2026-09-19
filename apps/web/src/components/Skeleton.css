@@ -1,0 +1,214 @@
+/* ============================================================================
+ * Skeleton — the one loading pattern in the product (design.md §7, §7.1).
+ *
+ * Every value here comes from `src/styles/tokens.css`. There is no hex colour
+ * and no raw pixel size: shape heights are derived from the type scale so a
+ * placeholder occupies exactly the line box its real content will occupy, and
+ * widths are proportions of the container rather than fixed sizes, so a
+ * skeleton keeps its shape at every breakpoint (design.md §6.3).
+ *
+ * The shimmer is decorative. It is switched off entirely — not merely slowed —
+ * when the user has asked for reduced motion (requirement 15.11). The global
+ * block in `index.css` would already stop the animation; the rule at the end of
+ * this file removes the sweeping layer altogether so nothing moves and nothing
+ * is left mid-sweep.
+ * ==========================================================================*/
+
+/* --- The announced loading region ----------------------------------------
+ * One region per loading area. `role="status"` announces politely on
+ * appearance, `aria-busy` marks the area as pending, and the shapes inside are
+ * hidden from assistive technology because they carry no information. */
+.skeleton-region {
+  display: block;
+}
+
+/* The only text in a loading region. Visually hidden, available to screen
+   readers. `--border-w` is the product hairline (1px) and is used here to keep
+   the element in the accessibility tree without a raw pixel literal. */
+.skeleton-region__label {
+  position: absolute;
+  width: var(--border-w);
+  height: var(--border-w);
+  margin: calc(-1 * var(--border-w));
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- The primitive shape -------------------------------------------------- */
+.skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* Heights are the real line boxes of the type scale, so content landing in
+   place of a skeleton does not shift the layout. */
+.skeleton--line {
+  height: calc(var(--fs-body) * var(--lh-body));
+}
+
+.skeleton--heading {
+  height: calc(var(--fs-section) * var(--lh-tight));
+}
+
+.skeleton--block {
+  height: var(--sp-12);
+  border-radius: var(--radius-md);
+}
+
+.skeleton--pill {
+  height: var(--control-h-sm);
+  border-radius: var(--radius-pill);
+}
+
+/* A circle is sized, not proportional, so it wins over the width modifiers by
+   specificity rather than by `!important`. */
+.skeleton.skeleton--circle {
+  width: var(--sp-6);
+  height: var(--sp-6);
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
+/* --- Proportional widths -------------------------------------------------- */
+.skeleton--w-full {
+  width: 100%;
+}
+
+.skeleton--w-wide {
+  width: 72%;
+}
+
+.skeleton--w-half {
+  width: 50%;
+}
+
+.skeleton--w-narrow {
+  width: 34%;
+}
+
+.skeleton--w-tiny {
+  width: 18%;
+}
+
+/* --- Shimmer ------------------------------------------------------------- */
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--bg-page), transparent);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* --- Paragraph shape ----------------------------------------------------- */
+.skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* A last line that runs short is what makes a block of bars read as prose. */
+.skeleton-lines .skeleton:last-child {
+  width: 62%;
+}
+
+/* --- Card shape ---------------------------------------------------------- */
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--card-pad);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.skeleton-card__actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+/* --- List and timeline shapes -------------------------------------------- */
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.skeleton-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+.skeleton-list__item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.skeleton-list__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* A timeline entry leads with a small marker, not an avatar. */
+.skeleton-list--dot .skeleton.skeleton--circle {
+  width: var(--sp-3);
+  height: var(--sp-3);
+  margin-top: var(--sp-1);
+}
+
+/* --- Table shape ---------------------------------------------------------
+ * Columns are implicit: however many cells a row renders, each takes an equal
+ * share. That keeps the column count out of the CSS and out of any inline
+ * style (design.md §6.3 forbids inline style literals). */
+.skeleton-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.skeleton-table__row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--sp-4);
+  align-items: center;
+  padding-bottom: var(--sp-3);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+/* Mirrors the real header rule in `index.css`, which is the perceivable one. */
+.skeleton-table__row--header {
+  border-bottom-color: var(--border-strong);
+}
+
+.skeleton-table__row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* Requirement 15.11 — no autonomous motion when the user has asked for none.
+   The sweeping layer is removed, leaving a flat, static placeholder. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    display: none;
+  }
+}

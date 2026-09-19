@@ -1,258 +1,819 @@
-import { useState } from "react";
-import { searchCheckin, verifyCheckin, recoverTicket, completeCheckin, reconcilePayment } from "../api";
-import type { Registration, VerificationCheck, TicketResult } from "../types";
+/**
+ * Check-In — "can this attendee enter?" (design.md §8.6, requirements 9.1–9.12).
+ *
+ * A volunteer holding a phone at the venue desk has a queue behind them and an
+ * attendee in front of them who cannot find their ticket. The page is built for
+ * that: one search field, one column, large controls, one primary action at a
+ * time, and no operational reporting anywhere on it.
+ *
+ * The flow is Search → identify → verify → check in, with ticket recovery and
+ * payment reconciliation as branches off it. The four-step stepper reflects what
+ * has actually happened, and a branch is not progress.
+ *
+ * Four rules hold this page together, and each one is a rule about *not*
+ * deciding things on the client:
+ *
+ *   1. **Verification is never bypassed and never recomputed.** Every PASS, FAIL
+ *      and WARN on screen is a value from the verify response. The page decides
+ *      only what is enabled, from `blockingFailures` — and a WARN is not a
+ *      failure, so an attendee who has already checked in can still be completed
+ *      (requirements 9.5, 9.6, 9.7).
+ *   2. **Masked stays masked.** A multi-match response carries four fields per
+ *      candidate, one of them an email the API masked. `MaskedCandidate` is the
+ *      only candidate model this page holds, so there is no unmasked address to
+ *      render and none to store (requirements 9.4, 16.8). Nothing here writes to
+ *      `localStorage`, and nothing here logs an attendee.
+ *   3. **Prior state is reported, not smoothed over.** `already_existed` and
+ *      `was_already_checked_in` are read from the response and said out loud:
+ *      a recovered ticket that already existed is not announced as newly
+ *      generated, and an attendee who was already through is not announced as a
+ *      fresh check-in (requirements 9.8, 9.10).
+ *   4. **Reconciliation sends a transaction reference and nothing else.** There
+ *      is no field on this page for a card number, a CVV or a PIN, and a created
+ *      recovery case is reported as a case rather than as a resolution
+ *      (requirement 9.9).
+ *
+ * The page holds layout and wiring only. `checkinFlow.ts` owns the flow rules,
+ * `checkinService.ts` owns the typed boundary to the five endpoints, and the
+ * shared components own every surface: `PageHeader`, `StatusBadge` (the one
+ * status-to-colour mapper), `DataTable`, `EmptyState`, `ApiErrorState`,
+ * `Skeleton*` and `formatTime`.
+ */
 
-type Step = "search" | "verify" | "recover" | "checkin" | "done";
+import { useCallback, useId, useMemo, useState } from "react";
 
-export function CheckinConsole({ eventId }: { eventId: string }) {
-  const [step, setStep] = useState<Step>("search");
-  const [searchType, setSearchType] = useState("name");
-  const [searchValue, setSearchValue] = useState("");
-  const [registration, setRegistration] = useState<Registration | null>(null);
-  const [checks, setChecks] = useState<VerificationCheck[]>([]);
+import { ApiErrorState } from "../components/ApiErrorState";
+import { EmptyState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
+import { DataTable, type DataTableColumn } from "../components/DataTable";
+import { SkeletonList } from "../components/Skeleton";
+import { StatusBadge } from "../components/StatusBadge";
+import type { EventScopedPageProps } from "../event/EventScopedView";
+import { toApprovedCopy } from "../lib/errorCategory";
+import { formatAbsoluteTime, toMachineTime } from "../lib/formatTime";
+import { useApiFailure } from "../session/useApiFailure";
+import type { TicketResult } from "../types";
+import {
+  NOT_EVALUATED_LABEL,
+  NOT_EVALUATED_MESSAGE,
+  NO_MASKED_EMAIL_LABEL,
+  NO_TICKET_TYPE_LABEL,
+  SEARCH_FIELD_LABELS,
+  checkinSteps,
+  classifySearchTerm,
+  completionAvailable,
+  describeProgress,
+  maskedCandidatesFrom,
+  requiresDisambiguation,
+  singleMatchId,
+  verificationRows,
+  warnsAlreadyCheckedIn,
+  type MaskedCandidate,
+  type SearchTerm,
+} from "./checkin/checkinFlow";
+import {
+  apiCheckinService,
+  type CheckinCompletion,
+  type CheckinService,
+  type VerificationOutcome,
+} from "./checkin/checkinService";
+import "./CheckinConsole.css";
+
+const PAGE_TITLE = "Check-In";
+const PAGE_CONTEXT = "Find the attendee, see whether they can go in, and let them in.";
+
+/** Requirement 9.11 — the idle state says what this one field accepts. */
+const IDLE_TITLE = "Search to find an attendee.";
+const IDLE_DESCRIPTION =
+  "One field, four ways in: a registration ID like REG-2026-004821, an email address, a phone number, or a name. CommunityOps picks the matching lookup and tells you which one it used.";
+
+const SEARCH_LABEL = "Registration ID, email, phone or name";
+const SEARCH_HINT =
+  "Type any one of them. Exact identifiers find one person; a name may bring back several to choose from.";
+
+/** design.md §2 — one of the four Hinglish phrases, at the recovery entry. */
+const RECOVERY_HEADING = "Ticket nahi mila? Koi scene nahi.";
+
+/** design.md §2 — one of the four Hinglish phrases, at completion. */
+const COMPLETION_HEADING = "Scene handled.";
+
+const RECONCILE_HEADING = "No registration matched";
+const RECONCILE_LABEL = "Transaction reference";
+const RECONCILE_HINT =
+  "A transaction or payment reference only. CommunityOps never asks for a card number, a CVV or a PIN, and this form does not accept one.";
+
+/** What a search response resolved to, when it did not resolve a registration. */
+type SearchOutcome =
+  | { readonly kind: "candidates"; readonly candidates: readonly MaskedCandidate[]; readonly message: string }
+  | { readonly kind: "none"; readonly message: string };
+
+/** How the registration on screen came to be resolved. */
+type Origin = "search" | "reconciliation";
+
+interface Resolved {
+  readonly registrationId: string;
+  readonly origin: Origin;
+}
+
+/** The outcome of a reconciliation that did not resolve a registration. */
+interface RecoveryCase {
+  readonly kind: "case" | "unresolved";
+  readonly message: string;
+}
+
+/**
+ * Which request failed, so "Try again" re-runs that one and nothing else
+ * (requirement 13.3).
+ */
+type Attempt = "search" | "verify" | "recover" | "reconcile" | "complete";
+
+export interface CheckinConsoleProps extends EventScopedPageProps {
+  /**
+   * The five check-in endpoints. Defaults to the API client; a test supplies the
+   * responses it wants to assert against.
+   */
+  readonly service?: CheckinService;
+}
+
+export function CheckinConsole({ eventId, service = apiCheckinService }: CheckinConsoleProps) {
+  const report = useApiFailure();
+
+  /* The search term is page state and survives every failure: requirement 9.12
+     is explicit that a failed request retains it, so the volunteer never retypes
+     a registration ID because the network dropped. */
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [outcome, setOutcome] = useState<SearchOutcome | null>(null);
+
+  const [resolved, setResolved] = useState<Resolved | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verification, setVerification] = useState<VerificationOutcome | null>(null);
+
+  const [recovering, setRecovering] = useState(false);
   const [ticket, setTicket] = useState<TicketResult | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showReconcile, setShowReconcile] = useState(false);
-  const [txnRef, setTxnRef] = useState("");
 
-  async function handleSearch() {
-    setError("");
-    setLoading(true);
-    try {
-      const result = await searchCheckin(eventId, { [searchType]: searchValue });
-      if (!result.found || result.count === 0) {
-        setShowReconcile(true);
-        setError(result.message || "No registration found.");
-        return;
-      }
-      if (result.requires_disambiguation) {
-        setError(`${result.count} matches found. Please provide a more specific identifier.`);
-        return;
-      }
-      setRegistration(result.registrations[0] ?? null);
-      setStep("verify");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Search failed");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [transactionId, setTransactionId] = useState("");
+  const [reconciling, setReconciling] = useState(false);
+  const [recoveryCase, setRecoveryCase] = useState<RecoveryCase | null>(null);
 
-  async function handleVerify() {
-    if (!registration) return;
-    setLoading(true);
-    try {
-      const result = await verifyCheckin(eventId, registration.registration_id);
-      setChecks(result.verification.checks);
-      setStep(result.verification.all_passed ? "recover" : "verify");
-      if (!result.verification.all_passed) {
-        setError("Verification failed. See details below.");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Verification failed");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [completing, setCompleting] = useState(false);
+  const [completion, setCompletion] = useState<CheckinCompletion | null>(null);
 
-  async function handleRecover() {
-    if (!registration) return;
-    setLoading(true);
-    try {
-      const result = await recoverTicket(eventId, registration.registration_id);
-      setTicket(result);
-      setStep("checkin");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Ticket recovery failed");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [failure, setFailure] = useState<unknown>(null);
+  const [attempt, setAttempt] = useState<Attempt | null>(null);
 
-  async function handleCheckin() {
-    if (!registration) return;
-    setLoading(true);
-    try {
-      await completeCheckin(eventId, registration.registration_id);
-      setStep("done");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Check-in failed");
-    } finally {
-      setLoading(false);
-    }
-  }
+  /** Requirement 15.8 — results are announced, not only rendered. */
+  const [announcement, setAnnouncement] = useState("");
 
-  async function handleReconcile() {
-    if (!txnRef.trim()) return;
-    setLoading(true);
-    setError("");
-    try {
-      const result = await reconcilePayment(eventId, txnRef) as Record<string, unknown>;
-      if (result.reconciled) {
-        setRegistration({ registration_id: result.registration_id as string, attendee_name: (result.registration as Record<string, string>)?.attendee_name || "", attendee_email: "", attendee_phone: "", event_id: eventId, status: "CONFIRMED", payment_status: "CAPTURED", ticket_type: "GENERAL", is_checked_in: false });
-        setShowReconcile(false);
-        setStep("verify");
-      } else {
-        setError((result.message as string) || "Reconciliation could not be completed.");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Reconciliation failed");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const searchFieldId = useId();
+  const searchHintId = useId();
+  const transactionFieldId = useId();
+  const transactionHintId = useId();
 
-  function reset() {
-    setStep("search");
-    setSearchValue("");
-    setRegistration(null);
-    setChecks([]);
+  const term = useMemo<SearchTerm | null>(() => classifySearchTerm(query), [query]);
+
+  const busy = searching || verifying || recovering || reconciling || completing;
+
+  /** Hold a failure and record which request produced it. */
+  const fail = useCallback(
+    (which: Attempt, error: unknown) => {
+      const held = report(error);
+
+      setAttempt(held === null ? null : which);
+      setFailure(held);
+    },
+    [report],
+  );
+
+  const runVerify = useCallback(
+    (registrationId: string) => {
+      setVerifying(true);
+      setFailure(null);
+
+      service.verify(eventId, registrationId).then(
+        (result) => {
+          setVerifying(false);
+          setVerification(result);
+          setAnnouncement(describeVerification(result));
+        },
+        (error: unknown) => {
+          setVerifying(false);
+          fail("verify", error);
+        },
+      );
+    },
+    [eventId, fail, service],
+  );
+
+  /**
+   * A registration is resolved. Verification follows immediately and without
+   * being asked for: it is the answer to the page's question, and a desk with a
+   * queue should not need a second tap to get it.
+   */
+  const resolve = useCallback(
+    (registrationId: string, origin: Origin) => {
+      setResolved({ registrationId, origin });
+      setOutcome(null);
+      setRecoveryCase(null);
+      setVerification(null);
+      setTicket(null);
+      runVerify(registrationId);
+    },
+    [runVerify],
+  );
+
+  const runSearch = useCallback(() => {
+    if (term === null) return;
+
+    setSearching(true);
+    setFailure(null);
+    setOutcome(null);
+    setRecoveryCase(null);
+
+    service.search(eventId, term).then(
+      (result) => {
+        setSearching(false);
+
+        const matched = singleMatchId(result);
+
+        if (matched !== null) {
+          // Requirement 9.3: a single match advances to verification.
+          setAnnouncement("One registration matched. Running verification.");
+          resolve(matched, "search");
+          return;
+        }
+
+        if (requiresDisambiguation(result)) {
+          // Requirement 9.4: candidates are offered, never auto-selected.
+          const candidates = maskedCandidatesFrom(result);
+
+          setOutcome({
+            kind: "candidates",
+            candidates,
+            message: toApprovedCopy(
+              result.message,
+              "More than one person matches. Pick the right registration.",
+            ),
+          });
+          setAnnouncement(
+            `${candidates.length} registrations match. Pick the right one — CommunityOps will not choose for you.`,
+          );
+          return;
+        }
+
+        setOutcome({
+          kind: "none",
+          message: toApprovedCopy(
+            result.message,
+            "No registration matched that search. You can try a payment reference instead.",
+          ),
+        });
+        setAnnouncement("No registration matched that search.");
+      },
+      (error: unknown) => {
+        setSearching(false);
+        fail("search", error);
+      },
+    );
+  }, [eventId, fail, resolve, service, term]);
+
+  const runRecover = useCallback(() => {
+    if (resolved === null) return;
+
+    setRecovering(true);
+    setFailure(null);
+
+    service.recover(eventId, resolved.registrationId).then(
+      (result) => {
+        setRecovering(false);
+        setTicket(result);
+        setAnnouncement(describeTicket(result));
+      },
+      (error: unknown) => {
+        setRecovering(false);
+        fail("recover", error);
+      },
+    );
+  }, [eventId, fail, resolved, service]);
+
+  const runReconcile = useCallback(() => {
+    const reference = transactionId.trim();
+
+    if (reference === "") return;
+
+    setReconciling(true);
+    setFailure(null);
+    setRecoveryCase(null);
+
+    service.reconcile(eventId, reference).then(
+      (result) => {
+        setReconciling(false);
+
+        if (result.kind === "reconciled") {
+          setAnnouncement(
+            `Payment matched ${result.attendeeName === "" ? "a registration" : result.attendeeName}. Running verification.`,
+          );
+          resolve(result.registrationId, "reconciliation");
+          return;
+        }
+
+        /* Requirement 9.9: a created recovery case is a case. It is not a
+           reconciliation, and nothing advances on the strength of it. */
+        setRecoveryCase({
+          kind: result.kind,
+          message: toApprovedCopy(
+            result.message,
+            "No matching registration or payment record was found.",
+          ),
+        });
+        setAnnouncement(
+          result.kind === "case"
+            ? "Not resolved. A recovery case has been opened for this attendee."
+            : "Not resolved. No payment record matched that reference.",
+        );
+      },
+      (error: unknown) => {
+        setReconciling(false);
+        fail("reconcile", error);
+      },
+    );
+  }, [eventId, fail, resolve, service, transactionId]);
+
+  const runComplete = useCallback(() => {
+    if (resolved === null) return;
+
+    setCompleting(true);
+    setFailure(null);
+
+    service.complete(eventId, resolved.registrationId).then(
+      (result) => {
+        setCompleting(false);
+        setCompletion(result);
+        setAnnouncement(describeCompletion(result));
+      },
+      (error: unknown) => {
+        setCompleting(false);
+        fail("complete", error);
+      },
+    );
+  }, [eventId, fail, resolved, service]);
+
+  const startOver = useCallback(() => {
+    setQuery("");
+    setSearching(false);
+    setOutcome(null);
+    setResolved(null);
+    setVerifying(false);
+    setVerification(null);
+    setRecovering(false);
     setTicket(null);
-    setError("");
-    setShowReconcile(false);
-    setTxnRef("");
-  }
+    setTransactionId("");
+    setReconciling(false);
+    setRecoveryCase(null);
+    setCompleting(false);
+    setCompletion(null);
+    setFailure(null);
+    setAttempt(null);
+    setAnnouncement("Ready for the next attendee.");
+  }, []);
 
-  const steps: { key: Step; label: string }[] = [
-    { key: "search", label: "1. Search" },
-    { key: "verify", label: "2. Verify" },
-    { key: "recover", label: "3. Recover Ticket" },
-    { key: "checkin", label: "4. Check In" },
-    { key: "done", label: "5. Done" },
-  ];
-  const stepIndex = steps.findIndex((s) => s.key === step);
+  /** Re-run only the request that failed. */
+  const retry = useMemo<(() => void) | undefined>(() => {
+    switch (attempt) {
+      case "search":
+        return runSearch;
+      case "verify":
+        return resolved === null ? undefined : () => runVerify(resolved.registrationId);
+      case "recover":
+        return runRecover;
+      case "reconcile":
+        return runReconcile;
+      case "complete":
+        return runComplete;
+      default:
+        return undefined;
+    }
+  }, [attempt, resolved, runComplete, runReconcile, runRecover, runSearch, runVerify]);
+
+  const steps = useMemo(
+    () =>
+      checkinSteps({
+        choosing: outcome?.kind === "candidates",
+        resolved: resolved !== null,
+        verified: verification !== null,
+        completed: completion !== null,
+      }),
+    [completion, outcome, resolved, verification],
+  );
+
+  const rows = useMemo(
+    () => (verification === null ? [] : verificationRows(verification.checks)),
+    [verification],
+  );
+
+  const canComplete = completionAvailable(verification?.checks ?? null);
+  const alreadyThrough = verification !== null && warnsAlreadyCheckedIn(verification.checks);
+
+  const candidateColumns = useMemo<readonly DataTableColumn<MaskedCandidate>[]>(
+    () => [
+      {
+        key: "attendee_name",
+        header: "Name",
+        rowHeader: true,
+        cell: (candidate) => candidate.attendee_name,
+      },
+      {
+        key: "registration_id",
+        header: "Registration",
+        cell: (candidate) => candidate.registration_id,
+      },
+      {
+        key: "attendee_email",
+        header: "Email (masked)",
+        cell: (candidate) =>
+          candidate.attendee_email === "" ? NO_MASKED_EMAIL_LABEL : candidate.attendee_email,
+      },
+      {
+        // Primary at every width, unlike the secondary columns on SpeakerOps and
+        // IncidentOps. A `secondary` column is one whose value the page's drawer
+        // still shows at narrow widths; this list has no drawer — the row action
+        // selects a registration rather than opening one — so hiding the ticket
+        // type below `--bp-md` would simply lose one of the four masked fields the
+        // API returned (requirement 9.4). Check-In is also the one mobile-first
+        // flow in the product, so the narrow width is its primary width.
+        key: "ticket_type",
+        header: "Ticket",
+        cell: (candidate) =>
+          candidate.ticket_type === "" ? NO_TICKET_TYPE_LABEL : candidate.ticket_type,
+      },
+    ],
+    [],
+  );
 
   return (
-    <div>
-      <h1 className="page-title">Check-In Console</h1>
-      <p className="page-subtitle">Smart ticket recovery for attendees</p>
+    <div className="page checkin">
+      <PageHeader title={PAGE_TITLE} context={PAGE_CONTEXT} />
 
-      <div className="stepper">
-        {steps.map((s, i) => (
-          <div key={s.key} className={`step ${i === stepIndex ? "active" : ""} ${i < stepIndex ? "done" : ""}`}>
-            {s.label}
-          </div>
-        ))}
-      </div>
+      {/* The page's one contextual visual: four steps, real progress, no dashboard. */}
+      <nav className="checkin-stepper" aria-label="Check-in progress">
+        <ol className="checkin-stepper__list">
+          {steps.map((step) => (
+            <li
+              className="checkin-stepper__step"
+              key={step.label}
+              data-state={step.state}
+              aria-current={step.state === "current" ? "step" : undefined}
+            >
+              <span className="checkin-stepper__position">{step.position}</span>
+              <span className="checkin-stepper__label">{step.label}</span>
+            </li>
+          ))}
+        </ol>
+        {/* Requirement 15.12: the visual's progress, stated in words and counts. */}
+        <p className="checkin-stepper__alt">{describeProgress(steps)}</p>
+      </nav>
 
-      {error && <div className="card" style={{ borderLeftColor: "var(--color-critical)", borderLeftWidth: 3 }}><p>{error}</p></div>}
+      {/* Requirement 15.8. Always present, so a result is announced rather than
+          the region itself being announced as it appears. */}
+      <p className="checkin__announcement" role="status" aria-live="polite">
+        {announcement}
+      </p>
 
-      {/* Step 1: Search */}
-      {step === "search" && (
-        <div className="card">
-          <div className="card-header"><span className="card-title">Search Registration</span></div>
-          <div className="input-group">
-            <select className="input" style={{ maxWidth: 180 }} value={searchType} onChange={(e) => setSearchType(e.target.value)}>
-              <option value="name">Name</option>
-              <option value="email">Email</option>
-              <option value="phone">Phone</option>
-              <option value="registration_id">Registration ID</option>
-            </select>
-            <input className="input" placeholder={`Search by ${searchType}...`} value={searchValue} onChange={(e) => setSearchValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
-            <button className="btn btn-primary" onClick={handleSearch} disabled={loading || !searchValue.trim()}>
-              {loading ? "Searching..." : "Search"}
-            </button>
-          </div>
+      {completion === null && resolved === null && (
+        <section className="card checkin-card" aria-labelledby="checkin-search-heading">
+          <h2 className="checkin-card__heading" id="checkin-search-heading">
+            Find the attendee
+          </h2>
 
-          {showReconcile && (
-            <div style={{ marginTop: 16 }}>
-              <p style={{ marginBottom: 8, color: "var(--color-text-muted)", fontSize: 14 }}>
-                No registration found. Enter a payment/transaction reference to attempt reconciliation:
-              </p>
-              <div className="input-group">
-                <input className="input" placeholder="Transaction reference (e.g. TXN-KH-78901)" value={txnRef} onChange={(e) => setTxnRef(e.target.value)} />
-                <button className="btn btn-primary" onClick={handleReconcile} disabled={loading || !txnRef.trim()}>
-                  {loading ? "Reconciling..." : "Reconcile"}
-                </button>
-              </div>
+          <form
+            className="checkin-search"
+            onSubmit={(formEvent) => {
+              formEvent.preventDefault();
+              runSearch();
+            }}
+          >
+            <label className="form-label checkin-field__label" htmlFor={searchFieldId}>
+              {SEARCH_LABEL}
+            </label>
+            <p className="form-hint checkin-field__hint" id={searchHintId}>
+              {SEARCH_HINT}
+            </p>
+            <div className="checkin-field__row">
+              <input
+                className="input checkin-field__input"
+                id={searchFieldId}
+                aria-describedby={searchHintId}
+                autoComplete="off"
+                value={query}
+                onChange={(inputEvent) => {
+                  setQuery(inputEvent.target.value);
+                }}
+              />
+              <button
+                className="btn btn-primary checkin-field__submit"
+                type="submit"
+                disabled={term === null || busy}
+              >
+                {searching ? "Searching…" : "Search"}
+              </button>
             </div>
+            {term !== null && (
+              <p className="checkin-search__lookup">
+                CommunityOps will look this up by {SEARCH_FIELD_LABELS[term.field]}.
+              </p>
+            )}
+          </form>
+
+          {searching && (
+            <SkeletonList items={2} label="Looking for a matching registration…" />
           )}
-        </div>
+
+          {!searching && outcome === null && failure === null && (
+            <EmptyState title={IDLE_TITLE} description={IDLE_DESCRIPTION} />
+          )}
+
+          {!searching && outcome?.kind === "candidates" && (
+            <section className="checkin-candidates" aria-labelledby="checkin-candidates-heading">
+              <h3 className="checkin-subheading" id="checkin-candidates-heading">
+                Pick the right registration
+              </h3>
+              <p className="checkin-note">
+                {outcome.message} Email addresses are shown masked, exactly as the registration
+                system returned them. CommunityOps will not choose for you.
+              </p>
+              <DataTable
+                label="Matching registrations"
+                columns={candidateColumns}
+                rows={outcome.candidates}
+                rowKey={(candidate) => candidate.registration_id}
+                rowAction={{
+                  label: "Use this one",
+                  header: "Select",
+                  onSelect: (candidate) => {
+                    resolve(candidate.registration_id, "search");
+                  },
+                  accessibleLabel: (candidate) =>
+                    `Use registration ${candidate.registration_id} for ${candidate.attendee_name}`,
+                }}
+              />
+            </section>
+          )}
+
+          {!searching && outcome?.kind === "none" && (
+            <section className="checkin-reconcile" aria-labelledby="checkin-reconcile-heading">
+              <h3 className="checkin-subheading" id="checkin-reconcile-heading">
+                {RECONCILE_HEADING}
+              </h3>
+              <p className="checkin-note">{outcome.message}</p>
+
+              <form
+                className="checkin-search"
+                onSubmit={(formEvent) => {
+                  formEvent.preventDefault();
+                  runReconcile();
+                }}
+              >
+                <label className="form-label checkin-field__label" htmlFor={transactionFieldId}>
+                  {RECONCILE_LABEL}
+                </label>
+                <p className="form-hint checkin-field__hint" id={transactionHintId}>
+                  {RECONCILE_HINT}
+                </p>
+                <div className="checkin-field__row">
+                  <input
+                    className="input checkin-field__input"
+                    id={transactionFieldId}
+                    aria-describedby={transactionHintId}
+                    autoComplete="off"
+                    value={transactionId}
+                    onChange={(inputEvent) => {
+                      setTransactionId(inputEvent.target.value);
+                    }}
+                  />
+                  <button
+                    className="btn checkin-field__submit"
+                    type="submit"
+                    disabled={transactionId.trim() === "" || busy}
+                  >
+                    {reconciling ? "Checking the payment record…" : "Check payment reference"}
+                  </button>
+                </div>
+              </form>
+
+              {recoveryCase !== null && (
+                <div className="checkin-case">
+                  <p className="checkin-case__title">
+                    {recoveryCase.kind === "case"
+                      ? "Recovery case opened. This is not resolved."
+                      : "Not resolved, and no recovery case was opened."}
+                  </p>
+                  <p className="checkin-note">{recoveryCase.message}</p>
+                  <StatusBadge domain="operational" status="CANNOT_BE_AUTOMATED" />
+                </div>
+              )}
+            </section>
+          )}
+        </section>
       )}
 
-      {/* Step 2: Verify */}
-      {step === "verify" && registration && (
-        <div className="card">
-          <div className="card-header"><span className="card-title">Registration Found</span></div>
-          <p style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>{registration.attendee_name}</p>
-          <p style={{ color: "var(--color-text-muted)", marginBottom: 16 }}>{registration.registration_id} · {registration.ticket_type}</p>
+      {completion === null && resolved !== null && (
+        <>
+          <section className="card checkin-card" aria-labelledby="checkin-verify-heading">
+            <h2 className="checkin-card__heading" id="checkin-verify-heading">
+              Verification
+            </h2>
 
-          {checks.length > 0 && (
-            <ul className="check-list">
-              {checks.map((c) => (
-                <li key={c.name} className="check-item">
-                  <span className={`check-icon check-${c.status.toLowerCase()}`}>
-                    {c.status === "PASS" ? "✓" : c.status === "FAIL" ? "✗" : "⚠"}
-                  </span>
-                  <span>{c.message}</span>
+            <p className="checkin-attendee__name">
+              {verification === null || verification.registration.attendee_name === ""
+                ? resolved.registrationId
+                : verification.registration.attendee_name}
+            </p>
+            <p className="checkin-attendee__meta">
+              {resolved.registrationId}
+              {verification !== null && verification.registration.ticket_type !== "" && (
+                <> · {verification.registration.ticket_type}</>
+              )}
+              {resolved.origin === "reconciliation" && <> · found by payment reference</>}
+            </p>
+
+            {verifying && (
+              <SkeletonList items={7} label="Running the seven verification checks…" />
+            )}
+
+            {verification !== null && (
+              <>
+                <ol className="checkin-checks">
+                  {rows.map((row) => (
+                    <li className="checkin-check" key={row.name} data-check-name={row.name}>
+                      <span className="checkin-check__label">{row.label}</span>
+                      {row.result === null ? (
+                        <span className="checkin-check__unknown">{NOT_EVALUATED_LABEL}</span>
+                      ) : (
+                        <StatusBadge
+                          domain="verification"
+                          status={row.result.status}
+                          detail={row.headline ?? undefined}
+                        />
+                      )}
+                      <p className="checkin-check__message">
+                        {row.result === null ? NOT_EVALUATED_MESSAGE : row.result.message}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+
+                {/* The verdict the page acts on, in words. A WARN is not in it. */}
+                <p className="checkin-verdict">
+                  {canComplete
+                    ? alreadyThrough
+                      ? "Every check that matters passed. This attendee has already been through once — check-in is still available."
+                      : "Every check passed. This attendee can go in."
+                    : "A check failed. CommunityOps cannot let this attendee in on these records."}
+                </p>
+              </>
+            )}
+
+            <div className="checkin-actions">
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={runComplete}
+                disabled={!canComplete || busy}
+              >
+                {completing ? "Checking in…" : "Complete check-in"}
+              </button>
+              <button className="btn" type="button" onClick={startOver} disabled={busy}>
+                Search someone else
+              </button>
+            </div>
+          </section>
+
+          <section className="card checkin-card" aria-labelledby="checkin-recover-heading">
+            <h2 className="checkin-card__heading" id="checkin-recover-heading">
+              {RECOVERY_HEADING}
+            </h2>
+            <p className="checkin-note">
+              CommunityOps can regenerate this attendee&apos;s ticket. Doing it twice never creates a
+              second ticket.
+            </p>
+
+            {ticket === null ? (
+              <div className="checkin-actions">
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={runRecover}
+                  disabled={!canComplete || busy}
+                >
+                  {recovering ? "Recovering the ticket…" : "Recover ticket"}
+                </button>
+              </div>
+            ) : (
+              <div className="checkin-ticket">
+                {/* Requirement 9.8: which of the two actually happened. */}
+                <p className="checkin-ticket__outcome">{describeTicket(ticket)}</p>
+                <p className="checkin-attendee__meta">Ticket {ticket.ticket_id}</p>
+                {isDownloadable(ticket.download_url) && (
+                  /* Plain `.btn`: one button height on the page (requirement
+                     12.11), and a target a thumb can hit (requirement 14.6). */
+                  <a
+                    className="btn"
+                    href={ticket.download_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open the ticket
+                  </a>
+                )}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {completion !== null && (
+        <section className="card checkin-complete" aria-labelledby="checkin-complete-heading">
+          <h2 className="checkin-complete__title" id="checkin-complete-heading">
+            {COMPLETION_HEADING}
+          </h2>
+          <p className="checkin-complete__line">{describeCompletion(completion)}</p>
+          <p className="checkin-attendee__meta">
+            {completion.registrationId} ·{" "}
+            <time dateTime={toMachineTime(completion.checkedInAt) ?? undefined}>
+              {formatAbsoluteTime(completion.checkedInAt)}
+            </time>
+          </p>
+          <StatusBadge domain="operational" status="HANDLED" />
+          <div className="checkin-actions">
+            <button className="btn btn-primary" type="button" onClick={startOver}>
+              Next attendee
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Requirement 9.12 and 13.5: category-mapped copy, the masked candidates
+          alongside it when the failure is an ambiguous match, and the search term
+          still in the field above. */}
+      {failure !== null && (
+        <ApiErrorState
+          error={failure}
+          onRetry={retry}
+          context={attempt === "search" || attempt === "verify" ? "view" : "action"}
+        >
+          {outcome?.kind === "candidates" ? (
+            <ul className="checkin-candidates__fallback">
+              {outcome.candidates.map((candidate) => (
+                <li key={candidate.registration_id}>
+                  {candidate.attendee_name} · {candidate.registration_id} ·{" "}
+                  {candidate.attendee_email === "" ? NO_MASKED_EMAIL_LABEL : candidate.attendee_email}
                 </li>
               ))}
             </ul>
-          )}
-
-          <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-            <button className="btn btn-primary" onClick={checks.length === 0 ? handleVerify : handleRecover} disabled={loading || (checks.length > 0 && checks.some((c) => c.status === "FAIL"))}>
-              {loading ? "Processing..." : checks.length === 0 ? "Run Verification" : "Recover Ticket"}
-            </button>
-            <button className="btn" onClick={reset}>Start Over</button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 3: Recover */}
-      {step === "recover" && registration && (
-        <div className="card">
-          <div className="card-header"><span className="card-title">Verification Passed</span></div>
-          <ul className="check-list">
-            {checks.map((c) => (
-              <li key={c.name} className="check-item">
-                <span className={`check-icon check-${c.status.toLowerCase()}`}>
-                  {c.status === "PASS" ? "✓" : c.status === "FAIL" ? "✗" : "⚠"}
-                </span>
-                <span>{c.message}</span>
-              </li>
-            ))}
-          </ul>
-          <div style={{ marginTop: 16 }}>
-            <button className="btn btn-primary" onClick={handleRecover} disabled={loading}>
-              {loading ? "Generating ticket..." : "Generate Ticket"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 4: Check-in */}
-      {step === "checkin" && ticket && registration && (
-        <div className="card">
-          <div className="card-header"><span className="card-title">Ticket Ready</span></div>
-          <p style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>{registration.attendee_name}</p>
-          <p style={{ marginBottom: 16 }}>
-            <span className="badge badge-healthy">VERIFIED</span>
-            {" "}Ticket: <strong>{ticket.ticket_id}</strong>
-          </p>
-          {ticket.download_url && ticket.download_url !== "#" && (
-            <p style={{ marginBottom: 16 }}>
-              <a href={ticket.download_url} target="_blank" rel="noopener noreferrer" className="btn btn-sm">📄 Download Ticket PDF</a>
-            </p>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-success" onClick={handleCheckin} disabled={loading}>
-              {loading ? "Checking in..." : "✓ Complete Check-In"}
-            </button>
-            <button className="btn" onClick={reset}>Start Over</button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 5: Done */}
-      {step === "done" && registration && (
-        <div className="card" style={{ borderLeftColor: "var(--color-healthy)", borderLeftWidth: 3 }}>
-          <h2 style={{ color: "var(--color-healthy)", marginBottom: 8 }}>✓ Check-In Complete</h2>
-          <p>{registration.attendee_name} — {registration.registration_id}</p>
-          <button className="btn" onClick={reset} style={{ marginTop: 16 }}>Next Attendee</button>
-        </div>
+          ) : undefined}
+        </ApiErrorState>
       )}
     </div>
   );
+}
+
+/** Only a real link is offered as one. The mock fixture returns `"#"`. */
+function isDownloadable(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+/**
+ * Requirement 9.8 — newly generated or already existing, read from
+ * `already_existed` and never smoothed into one sentence.
+ */
+function describeTicket(result: TicketResult): string {
+  return result.already_existed
+    ? "This ticket already existed. A fresh download link is ready — no second ticket was created."
+    : "A new ticket has been generated.";
+}
+
+/**
+ * Requirement 9.10 — an existing check-in is reported as one. `checked_in_at` is
+ * the time the response gave, which for an existing record is when they actually
+ * arrived, not now.
+ */
+function describeCompletion(result: CheckinCompletion): string {
+  const at = formatAbsoluteTime(result.checkedInAt);
+
+  return result.wasAlreadyCheckedIn
+    ? `This attendee was already checked in at ${at}. No new check-in was recorded — they can go in.`
+    : `Checked in at ${at}.`;
+}
+
+/** What the verify response said, for the announcement (requirement 15.8). */
+function describeVerification(result: VerificationOutcome): string {
+  const failed = result.checks.filter((check) => check.status === "FAIL").length;
+
+  if (failed > 0) {
+    return `Verification finished: ${failed} of ${result.checks.length} checks failed. This attendee cannot be checked in.`;
+  }
+
+  return warnsAlreadyCheckedIn(result.checks)
+    ? `Verification finished: all ${result.checks.length} checks clear, with a warning that this attendee has already checked in. Check-in is still available.`
+    : `Verification finished: all ${result.checks.length} checks passed.`;
 }

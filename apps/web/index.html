@@ -2,9 +2,27 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CommunityOps Agent</title>
+
+    <!--
+      One product name, in copy and in metadata (requirement 3.1, design.md
+      §15.2). This title is the pre-hydration fallback only: once a route mounts,
+      `PageHeader` owns `document.title` and writes "<Page> · CommunityOps", so
+      the tab never says something the page does not.
+    -->
+    <title>CommunityOps</title>
+    <meta name="application-name" content="CommunityOps" />
+    <meta
+      name="description"
+      content="CommunityOps — the operations console for community events. See what needs your decision, and what CommunityOps has already handled."
+    />
+
+    <!-- One theme, and it is light (requirement 12.3, design.md §6.1). Stated to
+         the user agent here as well as in `index.css`, so form controls and
+         scrollbars are drawn light before any stylesheet has loaded. -->
+    <meta name="color-scheme" content="light" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
     <div id="root"></div>

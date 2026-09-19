@@ -1,26 +1,52 @@
-/* CommunityOps Design System — clean, operational, accessible */
+/* ============================================================================
+ * CommunityOps base and shared component styles — LIGHT THEME.
+ *
+ * Every visual value in this file comes from `src/styles/tokens.css`, which is
+ * imported once from `src/main.tsx` immediately before this file and is the
+ * single source of truth for colour, type, spacing, radius, elevation and
+ * layout (requirement 12.1, design.md §6.2). There is no `:root` block here on
+ * purpose: duplicating tokens would create a second source of truth.
+ *
+ * There is one theme and it is light (requirement 12.3, design.md §6.1). There
+ * is no `prefers-color-scheme: dark` block by design.
+ *
+ * The only literal numbers below are the media-query breakpoints, which repeat
+ * the `--bp-*` values because CSS media queries cannot read custom properties.
+ *
+ * Two rules at the end of this file are load-bearing for accessibility and
+ * must survive every future edit: the `:focus-visible` indicator drawn from
+ * `--focus-ring` (requirement 15.4) and the `prefers-reduced-motion` block
+ * (requirement 15.11).
+ *
+ * WHAT BELONGS HERE (design.md §15.4)
+ *
+ * The shared vocabulary every route composes from: the page stack, the section,
+ * the card, the table cell, the drawer's internals, the detail list, the button,
+ * the input and the form. A treatment that appears on more than one page belongs
+ * here or in a component's own stylesheet — never copied into two page files,
+ * because that is how the eight pages drifted apart in the first place. A page
+ * stylesheet holds only what is genuinely that page's.
+ *
+ * This file is emitted *after* every component and page stylesheet, because
+ * `src/main.tsx` imports `App` before it. So a shared rule here wins ties over a
+ * page's, which is the intent — and a page that must override one does it with a
+ * two-class selector, as `.card.decision-card` and `.card.checkin-complete` do.
+ *
+ * The legacy block that used to live below this header — `.app-layout`,
+ * `.sidebar*`, `.stats-grid`, `.stat-card*`, `.badge*`, `.timeline-*`,
+ * `.check-*`, `.step*`, `.card-header`, `.card-title`, `.input-group`,
+ * `.table-container`, the bare `table`/`th`/`td` rules, `.page-title`,
+ * `.page-subtitle`, `.mock-mode-badge`, `.btn-danger`, `.btn-success` — is gone.
+ * Every one of them had been replaced by an extracted component (`AppShell`,
+ * `Sidebar`, `Topbar`, `StatusBadge`, `DataTable`, `Timeline`, `PageHeader`) and
+ * no TSX file referenced any of them. `.badge-healthy` … `.badge-critical` in
+ * particular were a second status-to-colour table living in a shared stylesheet,
+ * which requirement 12.5 reserves for `StatusBadge` alone.
+ * ==========================================================================*/
 
-:root {
-  --color-bg: #0f1117;
-  --color-surface: #1a1d27;
-  --color-surface-hover: #22262f;
-  --color-border: #2a2e3a;
-  --color-text: #e4e6eb;
-  --color-text-muted: #8b8fa3;
-  --color-text-dim: #5a5e6e;
-
-  --color-primary: #6366f1;
-  --color-primary-hover: #818cf8;
-
-  --color-healthy: #22c55e;
-  --color-attention: #f59e0b;
-  --color-warning: #f97316;
-  --color-critical: #ef4444;
-  --color-completed: #6b7280;
-
-  --radius: 8px;
-  --radius-sm: 4px;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+html {
+  /* One theme only, so UA widgets must not render a dark variant. */
+  color-scheme: light;
 }
 
 *,
@@ -32,417 +58,388 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  background: var(--color-bg);
-  color: var(--color-text);
-  line-height: 1.5;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  background: var(--bg-page);
+  color: var(--text-primary);
+  line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3 {
-  font-weight: 600;
-  line-height: 1.2;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
 }
 
-a { color: var(--color-primary); text-decoration: none; }
-a:hover { color: var(--color-primary-hover); }
+a { color: var(--brand); text-decoration: none; }
+a:hover { color: var(--brand-strong); }
 
-/* Layout */
-.app-layout {
-  display: flex;
-  min-height: 100vh;
-}
-
-.sidebar {
-  width: 240px;
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
-  padding: 20px 0;
+/* ---------------------------------------------------------------------------
+ * The page stack (requirement 12.4, design.md §15.1, §15.4)
+ *
+ * Every route's root element carries `.page`, so the vertical rhythm between a
+ * page's regions is one value in one place instead of a gap each page picked for
+ * itself. Before this existed, two pages set `--sp-6`, two set `--sp-4` and four
+ * set nothing at all.
+ *
+ * A page keeps its own root class alongside this one (`page speaker-ops`) purely
+ * as a scope hook for the few rules that are genuinely the page's — segment
+ * fills on its contextual visual, for instance. It is not a second frame: the
+ * frame, the content width and the page padding are `AppShell`'s.
+ * ------------------------------------------------------------------------- */
+.page {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
+  gap: var(--sp-6);
 }
 
-.sidebar-logo {
-  padding: 0 20px 20px;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-primary);
-  letter-spacing: -0.5px;
-}
-
-.sidebar-logo span {
-  color: var(--color-text-muted);
-  font-weight: 400;
-  font-size: 12px;
-  display: block;
-  margin-top: 2px;
-}
-
-.sidebar-nav { list-style: none; flex: 1; }
-
-.sidebar-nav a {
+/* ---------------------------------------------------------------------------
+ * Page sections (design.md §15.1)
+ *
+ * A titled region inside a page: heading, optional count, optional trailing
+ * control, one line of description, and the line shown when the region is empty
+ * but the page is not. One baseline and one label style for all of them.
+ * ------------------------------------------------------------------------- */
+.page-section__header {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 20px;
-  color: var(--color-text-muted);
-  font-size: 14px;
-  transition: all 0.15s;
-  border-left: 3px solid transparent;
-}
-
-.sidebar-nav a:hover,
-.sidebar-nav a.active {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
-  border-left-color: var(--color-primary);
-}
-
-.main-content {
-  flex: 1;
-  padding: 24px 32px;
-  overflow-y: auto;
-  max-width: 1200px;
-}
-
-/* Mock/Demo mode indicator */
-.mock-mode-badge {
-  margin: 12px 16px;
-  padding: 8px 12px;
-  background: rgba(245, 158, 11, 0.15);
-  border: 1px solid var(--color-attention);
-  border-radius: var(--radius-sm);
-  color: var(--color-attention);
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-  letter-spacing: 0.5px;
-}
-
-/* Cards */
-.card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 20px;
-  margin-bottom: 16px;
-}
-
-.card-header {
-  display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
 }
 
-.card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.page-section__heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-section);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  line-height: var(--lh-tight);
 }
 
-/* Stats */
-.stats-grid {
+/* The count beside a section heading: secondary, so the word leads. */
+.page-section__count {
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+.page-section__description,
+.page-section__empty {
+  margin: var(--sp-2) 0 var(--sp-4);
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+  line-height: var(--lh-body);
+}
+
+/* Below --bp-md (900px) a section header stacks, so whatever control sits beside
+   the heading keeps a full-width target (requirement 14.6). Stated here rather
+   than per page: the behaviour belongs to every section header. The literal
+   repeats `--bp-md` because a media query cannot read a custom property. */
+@media (max-width: 899px) {
+  .page-section__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Cards (requirement 12.4, checklist item 4 in design.md §15.3)
+ *
+ * One card frame for the whole product: one surface, one border, one radius, one
+ * elevation, one padding. Every card composes with this class — `card team-card`,
+ * `card checkin-card`, `card decision-card`, `card distribution` — and adds only
+ * what is genuinely its own. A component that restates the frame instead can
+ * drift away from it, which is what `DecisionCard` had started to do.
+ *
+ * No `margin-bottom`: the rhythm around a card belongs to the container that
+ * lays it out — `.page`'s gap, a grid's gap, `.approvals__queue`'s gap — so there
+ * is one source of vertical spacing rather than two that cancel each other out.
+ * Four cards used to zero this property back out again.
+ * ------------------------------------------------------------------------- */
+.card {
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--card-pad);
+}
+
+/* ---------------------------------------------------------------------------
+ * Table cell stacks (design.md §15.4, "identical table behaviour")
+ *
+ * A cell that carries a record's name over one line of supporting detail. Used
+ * by every table in the product so a row reads the same on every route.
+ * `DataTable` owns the table itself — the scroll container, the header rule, the
+ * cell padding and the secondary-column behaviour.
+ * ------------------------------------------------------------------------- */
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.cell-stack__primary {
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.cell-stack__meta {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------------------
+ * Drawer content (requirement 12.6, design.md §15.4)
+ *
+ * `Drawer` owns the panel, the focus behaviour, the scroll lock and the title.
+ * These are the headings and groupings pages put *inside* it, stated once so a
+ * drawer reads the same on every route. Before this existed, one page styled its
+ * drawer headings and another rendered them with no rules at all.
+ * ------------------------------------------------------------------------- */
+.drawer-description {
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  line-height: var(--lh-body);
+}
+
+/* A `<section>` inside the drawer, separated by a rule rather than a second
+   card: the drawer is already a surface. */
+.drawer-section {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-6);
+  border-top: var(--border-w) solid var(--border);
+}
+
+.drawer-heading {
+  font-size: var(--fs-card-title);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-2);
+}
+
+.drawer-subheading {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-support);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-2);
+}
+
+/* ---------------------------------------------------------------------------
+ * Detail lists (design.md §15.4)
+ *
+ * A record's fields as label/value rows. One column ratio, one gap, one
+ * baseline, so a drawer's facts line up identically on every route.
+ * ------------------------------------------------------------------------- */
+.detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+
+.detail-list__row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--sp-3);
+  align-items: baseline;
 }
 
-.stat-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
+.detail-list__row dt {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
 }
 
-.stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1;
-  margin-bottom: 4px;
+.detail-list__row dd {
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  line-height: var(--lh-body);
 }
 
-.stat-label {
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-/* Status badges */
-.badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.badge-healthy { background: rgba(34, 197, 94, 0.15); color: var(--color-healthy); }
-.badge-attention { background: rgba(245, 158, 11, 0.15); color: var(--color-attention); }
-.badge-warning { background: rgba(249, 115, 22, 0.15); color: var(--color-warning); }
-.badge-critical { background: rgba(239, 68, 68, 0.15); color: var(--color-critical); }
-.badge-completed { background: rgba(107, 114, 128, 0.15); color: var(--color-completed); }
-.badge-primary { background: rgba(99, 102, 241, 0.15); color: var(--color-primary); }
-
-/* Buttons */
+/* ---------------------------------------------------------------------------
+ * Buttons — one height for every button, one small variant (requirement 12.11)
+ *
+ * Two variants only: the default, and `btn-primary` for the one primary action a
+ * page is allowed. The legacy `btn-danger` and `btn-success` are gone; nothing
+ * referenced them, and a destructive control in this product is a decision, which
+ * `ApprovalActions` owns.
+ * ------------------------------------------------------------------------- */
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border: 1px solid var(--color-border);
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: var(--control-h);
+  padding: 0 var(--sp-4);
+  /* A control boundary has to be perceivable, so --border-strong. */
+  border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 500;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.btn:hover { background: var(--color-surface-hover); }
+.btn:hover { background: var(--bg-subtle); }
 
-.btn-primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
-.btn-primary:hover { background: var(--color-primary-hover); }
+.btn-primary { background: var(--brand); border-color: var(--brand); color: var(--text-inverse); }
+.btn-primary:hover { background: var(--brand-strong); border-color: var(--brand-strong); }
 
-.btn-danger { background: var(--color-critical); border-color: var(--color-critical); color: #fff; }
-.btn-danger:hover { opacity: 0.9; }
+.btn-sm { min-height: var(--control-h-sm); padding: 0 var(--sp-3); font-size: var(--fs-meta); }
 
-.btn-success { background: var(--color-healthy); border-color: var(--color-healthy); color: #fff; }
-.btn-success:hover { opacity: 0.9; }
-
-.btn-sm { padding: 5px 12px; font-size: 12px; }
-
-/* Forms */
+/* ---------------------------------------------------------------------------
+ * Forms (requirements 12.11, 13.11, design.md §15.4)
+ *
+ * One input height, and one treatment for every form in the product: the grouped
+ * fieldset that locks while a mutation is in flight, the legend that says what
+ * the form may change, the field stack, the control label, the checkbox row, and
+ * the action row that is replaced by its own result in place.
+ *
+ * SpeakerOps used to name all of these and define none of them, so its change
+ * form rendered unstyled beside the two that looked alike.
+ * ------------------------------------------------------------------------- */
 .input {
   width: 100%;
-  padding: 10px 14px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  height: var(--input-h);
+  padding: 0 var(--sp-3);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius-sm);
-  color: var(--color-text);
-  font-size: 14px;
-  outline: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-body);
   transition: border-color 0.15s;
 }
 
-.input:focus { border-color: var(--color-primary); }
+.input::placeholder { color: var(--text-muted); }
 
-.input-group {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
+.input:focus { border-color: var(--brand); }
 
-/* Tables */
-.table-container { overflow-x: auto; }
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th {
-  text-align: left;
-  padding: 10px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-td {
-  padding: 12px;
-  font-size: 14px;
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: top;
-}
-
-tr:hover td { background: var(--color-surface-hover); }
-
-/* Timeline */
-.timeline { list-style: none; }
-
-.timeline-item {
-  display: flex;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-border);
-  font-size: 13px;
-}
-
-.timeline-time {
-  color: var(--color-text-dim);
-  font-family: "SF Mono", monospace;
-  font-size: 12px;
-  flex-shrink: 0;
-  width: 60px;
-}
-
-.timeline-action { color: var(--color-text); }
-.timeline-actor { color: var(--color-text-muted); }
-.timeline-resource { color: var(--color-primary); font-weight: 500; }
-
-/* Verification checks */
-.check-list { list-style: none; }
-
-.check-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  font-size: 14px;
-}
-
-.check-icon { width: 20px; text-align: center; font-weight: 700; }
-.check-pass { color: var(--color-healthy); }
-.check-fail { color: var(--color-critical); }
-.check-warn { color: var(--color-attention); }
-
-/* Stepper */
-.stepper {
-  display: flex;
-  gap: 0;
-  margin-bottom: 24px;
-}
-
-.step {
-  flex: 1;
-  text-align: center;
-  padding: 12px 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-dim);
-  border-bottom: 3px solid var(--color-border);
-  transition: all 0.2s;
-}
-
-.step.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
-.step.done { color: var(--color-healthy); border-bottom-color: var(--color-healthy); }
-
-/* Page title */
-.page-title {
-  font-size: 22px;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: var(--color-text-muted);
-  margin-bottom: 24px;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .sidebar { display: none; }
-  .main-content { padding: 16px; }
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-/* Sign-in */
-.login-shell {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.login-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 32px;
-  width: 100%;
-  max-width: 380px;
-  box-shadow: var(--shadow);
-}
-
-.login-brand {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--color-primary);
-  letter-spacing: -0.5px;
-  margin-bottom: 4px;
-}
-
-.login-brand span {
-  display: block;
-  color: var(--color-text-muted);
-  font-weight: 400;
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.login-intro {
-  color: var(--color-text-muted);
-  font-size: 13px;
-  margin: 12px 0 20px;
-}
-
-.login-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 6px;
-}
-
-.login-card .input {
-  width: 100%;
-  margin-bottom: 16px;
-}
-
-.login-submit {
-  width: 100%;
-  margin-top: 4px;
-}
-
-.login-error {
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid var(--color-critical);
-  color: var(--color-critical);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  font-size: 13px;
-  margin-bottom: 16px;
-}
-
-/* Signed-in account block in the sidebar */
-.sidebar-account {
-  margin: 12px 16px 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border);
+/* No border: the legend and the surrounding rule carry the grouping. A fieldset
+   that needs its own box says so where it sits, as `.team-task__form` does. */
+.form-fields {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
+  border: 0;
 }
 
-.sidebar-account-email {
-  font-size: 11px;
-  color: var(--color-text-dim);
-  word-break: break-all;
+.form-legend {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+  line-height: var(--lh-body);
+  margin-bottom: var(--sp-3);
 }
 
-/* Visible keyboard focus — the default outline is invisible on this palette */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* A control's own name. Sentence case at support size: the uppercase
+   letter-spaced style belongs to table headers and metric labels, which name a
+   column or a number rather than a control. */
+.form-label {
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.form-hint {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+/* A `<label>` wrapping its own checkbox, so the label *is* the target. That is
+   why the touch minimum below is applied to this class rather than to the box:
+   a checkbox is drawn by the platform at the size the user's own settings
+   decide, so the label grows around it instead (requirement 14.6). */
+.form-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--control-h-sm);
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+/* The outcome, in the action row's place (requirement 13.11). */
+.form-result {
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  line-height: var(--lh-body);
+}
+
+/* Touch targets below --bp-md (900px) — requirement 14.6.
+ *
+ * Stated once, here, on the shared control classes and on the elements the
+ * platform makes interactive, so no component has to restate it and no new
+ * control can be added below the minimum by omission. `min-height` rather than
+ * `height`, so a control that is already taller keeps its size.
+ *
+ * Two deliberate exclusions:
+ *   - checkboxes and radios, whose box is drawn by the platform at a size the
+ *     user's own settings decide. Their target is the `<label>` wrapping them,
+ *     which is `.form-check` — included below, so every checkbox row in the
+ *     product takes the minimum without any page restating it.
+ *   - links inside prose, which sit on a text baseline: growing them would open
+ *     gaps in the paragraph. Navigation links, which are rows rather than words,
+ *     take the minimum in `Sidebar.css`.
+ */
+@media (max-width: 899px) {
+  .btn,
+  .btn-sm,
+  .input,
+  .form-check,
+  button,
+  select,
+  textarea,
+  input:not([type="checkbox"]):not([type="radio"]) {
+    min-height: var(--touch-min);
+  }
+}
+
+/* Sign-in lives in `src/pages/Login.css`, co-located with the screen that owns
+   it. The legacy `.login-*` block that used to sit here is gone: nothing outside
+   that screen referenced it. */
+
+/* Visible keyboard focus on every interactive element, drawn from the
+   brand-derived focus ring (requirement 15.4). Do not remove or weaken.
+
+   `textarea` and `summary` are named because the product has both — the Edit
+   field on a decision, and disclosure rows — and the original four selectors
+   left them to the user agent. `[tabindex]` covers anything made focusable
+   deliberately, excluding `tabindex="-1"`, which marks a *programmatic* focus
+   target such as `<main>` or the drawer panel: those take focus from the skip
+   link or on open and must not be ringed as though the user had tabbed to them. */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--color-primary-hover);
-  outline-offset: 2px;
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 
+/* Requirement 15.11 — no autonomous motion when the user has asked for none.
+   Do not remove or weaken. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

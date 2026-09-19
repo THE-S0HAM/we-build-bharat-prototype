@@ -1,0 +1,48 @@
+/* ============================================================================
+ * AgentStatus — the compact "CommunityOps is handling…" strip (design.md §7,
+ * §8.1). Card language, heading rhythm and spacing are the shared ones, so the
+ * strip reads as part of the same page frame as every other section
+ * (requirement 12.4).
+ *
+ * Every value is a token from `src/styles/tokens.css`.
+ * ==========================================================================*/
+
+.agent-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--card-pad);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.agent-status__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.agent-status__heading {
+  margin: 0;
+  font-size: var(--fs-card-title);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* The scope sentence. It is the difference between "this event" and
+   "organization-wide", so it is never decorative (requirement 4.7). */
+.agent-status__description {
+  margin: 0;
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+/* `outcome` is a free-form string in the contract, so it is rendered as text
+   and never mapped to a colour. */
+.agent-status__outcome {
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+  white-space: nowrap;
+}

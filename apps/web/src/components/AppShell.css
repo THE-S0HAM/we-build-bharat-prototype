@@ -1,0 +1,241 @@
+/* ============================================================================
+ * AppShell — the one page frame every authenticated route renders inside
+ * (requirement 12.4, design.md §7 and §15.1).
+ *
+ * Every value here comes from `src/styles/tokens.css`. No colour, size, radius,
+ * shadow or spacing literal appears below (design.md §6.3). The only literal
+ * numbers are the breakpoints inside `@media` preludes, because CSS media
+ * queries cannot read custom properties.
+ *
+ * The four widths (requirements 14.1–14.3, 14.7):
+ *
+ *   ≥ --bp-lg          full --nav-w navigation column, content at --content-max
+ *   --bp-md..--bp-lg   the --nav-w-collapsed icon rail (Sidebar.css draws it)
+ *   --bp-sm..--bp-md   menu button; the panel is a fixed --nav-panel-w sheet
+ *   < --bp-sm          the same panel, full width, under a sticky header
+ * ==========================================================================*/
+
+.app-shell {
+  /* Positioning context for the absolutely positioned skip link. */
+  position: relative;
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg-page);
+  color: var(--text-primary);
+}
+
+/* --- Skip to content -------------------------------------------------------
+ * First focusable element in the shell (requirement 15.1). Moved out of view
+ * with a transform rather than `display: none` or `visibility: hidden`, both of
+ * which would make it unfocusable. The focus ring itself comes from the global
+ * `a:focus-visible` rule in `index.css` and is deliberately not restated here.
+ * No transition, so `prefers-reduced-motion` has nothing to suppress. */
+.app-shell__skip-link {
+  position: absolute;
+  top: var(--sp-4);
+  left: var(--sp-4);
+  z-index: var(--z-toast);
+  transform: translateY(calc(-100% - var(--sp-16)));
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h);
+  padding: 0 var(--sp-4);
+  border: var(--border-w) solid var(--brand);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--brand);
+  font-size: var(--fs-support);
+  font-weight: var(--fw-semibold);
+}
+
+/* `:focus` as well as `:focus-visible`: the link is only reachable by keyboard,
+   and it must appear in every browser that lands focus on it. */
+.app-shell__skip-link:focus,
+.app-shell__skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* --- Navigation panel ------------------------------------------------------
+ * At or above `--bp-md` this is the navigation column: `--nav-w` wide, on the
+ * surface, divided from the page by a border. The divider uses
+ * `--border-strong` because the surface and page tints are deliberately close
+ * and this boundary must be perceivable.
+ *
+ * Below `--bp-md` the same element becomes the full-height menu panel, which is
+ * why the width, surface and divider live here rather than in `Sidebar.css`:
+ * one element, one owner, four widths. */
+.app-shell__panel {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: var(--nav-w);
+  background: var(--bg-surface);
+  border-right: var(--border-w) solid var(--border-strong);
+}
+
+/* The `hidden` attribute has to win over the `display: flex` above. The UA rule
+   that implements `hidden` is `display: none` in the user-agent origin, which any
+   author-origin `display` beats — so a closed panel would still be laid out
+   without this. Stated immediately after the rule it guards, so the two cannot
+   drift apart. */
+.app-shell__panel[hidden] {
+  display: none;
+}
+
+/* The panel takes focus when the menu opens so the navigation is announced from
+   its first entry. It is a container, not a control, so no ring is drawn around
+   the whole surface — the entries carry the indicator from `index.css`. */
+.app-shell__panel:focus {
+  outline: none;
+}
+
+.app-shell__nav {
+  display: flex;
+  flex-direction: column;
+  /* Takes the slack so the panel's context group can sit below it. */
+  flex: 1 1 auto;
+  /* Flex items default to `min-width: auto`, which would let a long email in the
+     account block widen the column. */
+  min-width: 0;
+}
+
+/* The event switcher's home below `--bp-md` (requirement 14.3). Absent above it,
+   where the switcher renders in the header instead. It sits above the navigation
+   and holds its height, so the panel's one scrolling region is the navigation
+   below it. */
+.app-shell__panel-context {
+  flex: 0 0 auto;
+  display: flex;
+  min-height: var(--header-h);
+  align-items: center;
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: var(--border-w) solid var(--border-strong);
+}
+
+/* --- Scrim ----------------------------------------------------------------
+ * Only ever rendered while the menu panel is open, which is only below
+ * `--bp-md`. It dims the page and is the surface a click-outside lands on. */
+.app-shell__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  /* There is no scrim colour token, and `tokens.css` is the only place a colour
+     may be defined, so the scrim is mixed from the charcoal of --text-primary
+     rather than introducing a literal here. Same mix as the drawer's scrim. */
+  background: color-mix(in srgb, var(--text-primary) 45%, transparent);
+}
+
+/* --- Body column ----------------------------------------------------------*/
+.app-shell__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  /* Flex items default to `min-width: auto`, which lets a wide table push the
+     column past the viewport. Zero keeps the no-horizontal-scroll promise
+     (requirement 14.7). */
+  min-width: 0;
+}
+
+.app-shell__header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--bg-surface);
+  border-bottom: var(--border-w) solid var(--border-strong);
+}
+
+/* The top bar sits on the same measure as the content column, so global
+   context and page content share one left edge at every width. */
+.app-shell__header-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: var(--header-h);
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding-inline: var(--page-pad-x);
+}
+
+/* The compact-width navigation control. Only rendered below `--bp-md`, so it
+   needs no media query of its own — and it is the product's shared button, so
+   it is the same control as everywhere else. */
+.app-shell__menu {
+  flex: 0 0 auto;
+  min-height: var(--touch-min);
+}
+
+.app-shell__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The content column: one max width, one page padding, one section rhythm.
+   Direct children are the page's sections, so consecutive blocks are spaced
+   identically on every route by construction (requirement 12.4). One column at
+   every width — no page defines a second one (requirement 14.2). */
+.app-shell__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: var(--page-pad-y) var(--page-pad-x);
+}
+
+/* --- --bp-md (900px) to --bp-lg (1200px) ----------------------------------
+ * The navigation column narrows to the icon rail (requirement 14.2). The rail's
+ * contents — the monogram, and the label that appears on hover and focus — are
+ * `Sidebar.css`'s; the width is the frame's.
+ *
+ * `overflow: visible` is load-bearing: the label appears beside the rail, so the
+ * column must not clip it. */
+@media (min-width: 900px) and (max-width: 1199px) {
+  .app-shell__panel {
+    width: var(--nav-w-collapsed);
+    overflow: visible;
+  }
+}
+
+/* --- Below --bp-md (900px) -------------------------------------------------
+ * The navigation becomes a menu button in the sticky header, and the panel
+ * becomes a full-height sheet over the page (requirement 14.3). The panel is
+ * `hidden` while closed — an attribute, not a class — so a closed menu holds no
+ * focusable entry at all. */
+@media (max-width: 899px) {
+  .app-shell__panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: var(--z-drawer);
+    width: var(--nav-panel-w);
+    /* Never wider than the viewport, so the panel cannot introduce horizontal
+       page scroll (requirement 14.7). */
+    max-width: 100%;
+    /* Full height with its own scroll, so a long navigation list is reachable
+       without scrolling the page behind it. */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-right: var(--border-w) solid var(--border-strong);
+    box-shadow: var(--shadow-raised);
+  }
+
+  .app-shell__header-inner,
+  .app-shell__content {
+    padding-inline: var(--sp-4);
+  }
+}
+
+/* --- Below --bp-sm (640px) ------------------------------------------------
+ * The panel fills the width, matching the drawer's full-screen sheet at the
+ * same breakpoint (requirement 14.4). */
+@media (max-width: 639px) {
+  .app-shell__panel {
+    right: 0;
+    width: 100%;
+    border-right: none;
+  }
+}

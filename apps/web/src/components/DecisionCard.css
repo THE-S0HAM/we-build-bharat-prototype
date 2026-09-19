@@ -1,0 +1,218 @@
+/* DecisionCard — the "Needs your decision" surface of design.md §6.4:
+   an --attention left rule on the surface, an --attention-soft tint, and
+   explicit action buttons. Restrained amber, never red: a decision waiting is
+   not an alarm.
+
+   Every value here is a token from src/styles/tokens.css. */
+
+/* The frame — surface, border, radius, elevation, padding — is `.card`'s in
+   `index.css`, applied alongside this class, so the decision surface is the same
+   card as every other one in the product (requirement 12.4). This file adds only
+   what is the decision's own: the --attention left rule and the vertical stack.
+
+   The selector is two classes on purpose: `src/main.tsx` imports `App` before
+   `index.css`, so the shared `.card` rule is emitted after this file and its
+   four-sided `border` would otherwise win at equal specificity and erase the
+   amber rule. Same technique as `.card.checkin-card`. */
+.card.decision-card {
+  border-left: var(--sp-1) solid var(--attention);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.decision-card__states {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.decision-card__title {
+  margin: 0;
+  font-size: var(--fs-section);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+
+.decision-card__attribution {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+.decision-card__agent {
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.decision-card__time {
+  color: var(--text-muted);
+}
+
+.decision-card__facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--sp-16) * 3.5)), 1fr));
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.decision-card__fact dt {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.decision-card__fact dd {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+}
+
+.decision-card__consequence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--attention-soft);
+  border-radius: var(--radius-sm);
+}
+
+.decision-card__consequence p {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--text-primary);
+}
+
+/* The answer this line describes, named in words: the two sentences are never
+   told apart by position or colour alone. */
+.decision-card__consequence-label {
+  display: inline-block;
+  min-width: calc(var(--sp-16) * 1.25);
+  margin-right: var(--sp-2);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--attention);
+}
+
+.decision-card__reason {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+}
+
+.decision-card__framing {
+  margin: 0;
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+.decision-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-top: var(--sp-1);
+}
+
+/* --- The reasoning drawer's content ------------------------------------- */
+
+.decision-reasoning {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.decision-reasoning__block h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-card-title);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.decision-reasoning__block p {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+}
+
+.decision-reasoning__evidence {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.decision-reasoning__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+.decision-reasoning__row dt {
+  flex: 0 0 calc(var(--sp-16) * 2.75);
+  font-size: var(--fs-support);
+  color: var(--text-muted);
+}
+
+.decision-reasoning__row dd {
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+}
+
+.decision-reasoning__note {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-support);
+  color: var(--text-muted);
+}
+
+/* --- Below --bp-sm (640px) -----------------------------------------------
+ * Requirement 14.5 is non-negotiable at every width: the decision surface stays
+ * fully readable with all three actions visible and labelled. So the row becomes
+ * a column — full-width buttons, one per line, each keeping its whole label —
+ * rather than shrinking, truncating or collapsing into a menu.
+ *
+ * Media queries cannot read custom properties, so the breakpoint repeats the
+ * `--bp-sm` token value. */
+@media (max-width: 639px) {
+  .decision-card__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .decision-card__why {
+    width: 100%;
+  }
+
+  /* The consequence label sits above its sentence instead of reserving a column
+     beside it, so neither the word nor the sentence is squeezed. */
+  .decision-card__consequence-label {
+    display: block;
+    min-width: 0;
+    margin-right: 0;
+  }
+
+  /* The evidence term drops its fixed column for the same reason. */
+  .decision-reasoning__row dt {
+    flex: 0 0 auto;
+  }
+}
