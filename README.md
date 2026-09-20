@@ -1,204 +1,193 @@
-# CommunityOps Agent
+# CommunityOps
 
-An AI Community Operations Agent that coordinates event operations for community leaders, automating repetitive work while keeping consequential decisions under human control.
+## One-Line Description
+
+AI-powered community operations agent that helps community and event leaders coordinate repetitive operational work while keeping consequential decisions with humans.
 
 ## Problem
 
-Community organizers juggle speakers, teams, attendees, check-ins, incidents, approvals, and logistics across multiple events. Most of this is manual: chasing follow-ups, resolving on-the-spot issues, reconciling registrations, and coordinating across teams. Mistakes happen when humans are overloaded.
+Community leaders running AWS and other community events continuously coordinate speakers, volunteers and teams, attendees, check-in, incidents, approvals, follow-ups, operational tasks, audit history, and event-day exceptions. Registration is only one moment in that lifecycle; the harder problem is keeping many moving parts aligned before and during an event.
+
+CommunityOps reduces repetitive coordination work while preserving human control over consequential decisions.
 
 ## Solution
 
-CommunityOps is an AI-powered operations layer. It observes operational state, retrieves trusted facts from deterministic systems, reasons about next actions, enforces policy, obtains human approval when required, executes bounded actions, and audits the result.
+CommunityOps acts as an operations layer for community leaders:
 
-**Core principle:** Deterministic systems establish facts. AI reasons about the facts. Policies control what the AI may do. Workflows execute the process. Humans approve consequential actions.
+**Detects → Understands → Retrieves context → Plans → Checks policy → Acts when authorized → Waits for approval when required → Verifies → Audits → Re-evaluates**
 
-## Hero Workflow: Smart Check-In Recovery
+Deterministic systems establish facts. AI reasons about those facts. Policies control authority. Workflows coordinate multi-step processes. Humans approve financial, irreversible, and high-risk actions.
 
-An attendee arrives at the event without a usable ticket or pass. CommunityOps handles the full recovery:
+## How It Works
 
-1. **Search** - Look up registration by name, email, phone, or ID
-2. **Verify** - Run deterministic checks: registration status, payment captured, not cancelled/refunded
-3. **Reconcile** - If registration not found, attempt payment reference reconciliation
-4. **Recover Ticket** - Generate PDF ticket with signed QR code, upload to S3
-5. **Check In** - Idempotent check-in with duplicate protection
-6. **Audit** - Full audit trail of every step
+| Layer | Implementation |
+|---|---|
+| Frontend | React 19, TypeScript, Vite, React Router, accessible light design system |
+| Authentication | Amazon Cognito user pools and group-derived organization/role context |
+| API | Amazon API Gateway |
+| Compute | AWS Lambda on Python 3.12 |
+| Data | Amazon DynamoDB with organization-scoped keys and GSIs |
+| Storage | Private Amazon S3 buckets for tickets and frontend assets |
+| AI | Amazon Bedrock Converse API with Amazon Nova Pro |
+| Agent | Framework-neutral typed tool loop; Strands factories consume the shared registry |
+| Workflow | AWS Step Functions for speaker follow-up and incident response; EventBridge custom bus for domain events |
+| Policy | Cedar policy specification with a tested Python runtime enforcement layer |
+| Hosting | Amazon CloudFront with private S3 origin |
+| Infrastructure | AWS SAM and CloudFormation |
 
-Edge cases handled: ambiguous matches (disambiguation), cancelled/refunded registrations (rejection), external service failures (recovery case creation, not false negatives), duplicate requests (idempotency).
+The deployed Agent sees only role-appropriate typed tools. Tool results establish operational facts; prompts cannot widen authorization.
+
+## Core Capabilities
+
+- **Command Center** — answers “Does anything need me right now?” using deterministic health, attention, brief, and activity data.
+- **SpeakerOps** — tracks speaker lifecycle, silence, details, and prepared follow-up drafts.
+- **TeamOps** — shows real teams, workload, tasks, blockers, and dedicated reassignment flows.
+- **AttendeeOps** — summarizes registration readiness and privacy-conscious exception lists.
+- **IncidentOps** — provides incident detail, discussion, linked tasks, and dedicated resolve/reopen workflows.
+- **Check-In** — performs deterministic attendee search, verification, ticket recovery, payment reconciliation, QR verification, and idempotent completion.
+- **Approvals** — presents risk, evidence, projections, approve/decline/edit decisions, and recorded outcomes.
+- **Budget** — displays backend-authoritative totals and supports leader-only totals, allocations, expenses, and projections in whole rupees.
+- **Agent** — provides operational conversation with evidence, role-aware capabilities, and visible approval boundaries.
+- **Audit** — shows chronological actor, action, result, resource, and timestamp history without exposing internal reasoning.
+
+## Check-In
+
+The event-day recovery flow is deterministic:
+
+**Search → Verify → Recover → Reconcile → Complete**
+
+Registration, payment, cancellation, refund, and eligibility truth comes from backend records rather than an LLM. Ticket recovery creates a private PDF with an HMAC-signed QR payload in S3. Recovery and completion are idempotent, ambiguous matches require a human selection, and unresolved payments create an honest recovery case instead of a false success.
+
+## Human-in-the-Loop
+
+Consequential actions follow the boundary:
+
+**Agent → Policy → Approval → Authorized execution → Verification → Audit**
+
+The UI distinguishes an action that CommunityOps can perform from one merely prepared for approval. It never exposes chain-of-thought, prompts, model internals, or hidden policy implementation.
+
+## Security
+
+- Cognito authentication on protected API routes; `/demo/session` is the deliberately restricted exception.
+- `LEADER` and `TEAM_MEMBER` roles come from trusted Cognito groups.
+- Organization membership and DynamoDB access are tenant-scoped; cross-organization requests fail closed.
+- Backend authorization remains authoritative even when the UI hides unavailable controls.
+- Runtime IAM roles are resource-scoped; focused live checks found no `Action: "*"` or `Resource: "*"` in the Agent and Incident workflow policies.
+- Ticket objects are private, encrypted, and accessed through short-lived presigned URLs.
+- QR payloads use server-side HMAC verification.
+- Operational changes produce audit records.
+- No passwords, AWS keys, tokens, or demo credentials are stored in the frontend.
+
+## Impact
+
+The AWS Student Builder Group footprint described in the hackathon brief spans 977+ universities across 63+ countries, illustrating the type of distributed community ecosystem CommunityOps is designed to support.
+
+### Potential organizational reach
+
+University communities across that footprint, plus organizations such as AWS User Groups and community-event teams.
+
+### Direct users
+
+Community leaders, event organizers, volunteer/team leads, speaker coordinators, and registration/check-in leads.
+
+### Indirect users
+
+Speakers, attendees, volunteers, sponsors, and venue/logistics teams.
+
+### Actual impact metric
+
+**Hours saved per event × events supported × organizers using CommunityOps**
+
+The hackathon implementation did not measure production hours saved. Future evaluation should measure real actions and organizer time saved rather than inventing a global user-impact number.
+
+## AWS / Hackathon Track
+
+CommunityOps fits the **Ship It** direction because a working application was deployed and exercised on AWS. It uses managed/serverless services—Cognito, API Gateway, Lambda, DynamoDB, S3, EventBridge, Step Functions, Bedrock, CloudFront, and CloudFormation/SAM—to minimize server management and target resource usage. Exact cost savings were not measured during the hackathon.
+
+## Learning
+
+This was the first end-to-end Kiro development experience for the project. Kiro supported brainstorming, architecture finalization, implementation, debugging, test generation, refactoring, validation, and deployment assistance while decisions remained with the developer. Official AWS documentation and live service behavior drove revisions to Cognito, CORS, Bedrock model selection, IAM resources, and deployment handling.
+
+Steering and hooks helped preserve product identity, security boundaries, naming, and repetitive validation practices. The project also provided practical experience with serverless architecture, Bedrock tool use, Cognito, Step Functions, EventBridge, tenant isolation, and real deployment debugging.
+
+## Challenges
+
+The work required reconciling a polished frontend branch with a newer backend without overwriting either source of truth. Other concrete challenges included Cognito/tenant isolation, honest Agent failure semantics, concurrent incident lifecycle mutations, API Gateway preflight authorization, Bedrock inference-profile and model availability, scoped Agent Lambda permissions, deterministic Check-In recovery, deployment identity permissions, preserving NoEcho stack parameters, and live AWS verification.
+
+The deployed Agent moved from a legacy/Marketplace-gated model configuration to the available AWS-native Amazon Nova Pro model after live verification exposed the incompatibility.
+
+## Demo
+
+Recommended three-minute narrative:
+
+**Login → Command Center → Agent → Approval boundary → IncidentOps → Check-In → Audit**
+
+The demo should tell one operational story: CommunityOps identifies what needs attention, handles bounded work, pauses at a consequential decision, supports an event-day recovery, and leaves verifiable evidence. It is an operations experience, not a generic chatbot demo.
 
 ## Architecture
 
-| Concern | Service |
-|---------|---------|
-| Identity | Amazon Cognito |
-| API | API Gateway + Lambda (Python 3.12) |
-| Database | DynamoDB (single-table design) |
-| Storage | S3 (ticket PDFs, knowledge docs) |
-| Events | EventBridge |
-| Workflows | Step Functions (human-in-the-loop) |
-| AI | Strands Agents SDK + Amazon Bedrock |
-| Policy | Cedar |
-| Frontend | React + TypeScript (Vite) |
-| IaC | AWS SAM / CloudFormation |
-
-## Agent System
-
-| Agent | Responsibility |
-|-------|---------------|
-| **Supervisor** | Routes operational intent, coordinates specialists, requests human approval |
-| **CheckInOps** | Ticket recovery, registration lookup, payment reconciliation, check-in |
-| **SpeakerOps** | Speaker outreach, follow-ups, availability tracking |
-| **TeamOps** | Task management, deadlines, dependencies, escalation |
-| **AttendeeOps** | Missing information, dietary/accommodation, communication |
-| **IncidentOps** | Risk detection, impact analysis, backup options, incident resolution |
-
-## Key Design Decisions
-
-- **No LLM for transactional truth**: Registration status, payment captures, and check-in eligibility come from DynamoDB, never from AI inference
-- **Cedar policy enforcement**: Actions classified as LOW/MEDIUM/HIGH risk. HIGH-risk actions require human approval
-- **Idempotent operations**: Ticket generation and check-in are safe to retry without duplicate side effects
-- **Tenant isolation**: Every DynamoDB query is scoped by `organization_id` (partition key)
-- **Step Functions for async workflows**: Speaker follow-up and incident response use `waitForTaskToken` for human-in-the-loop approval
-
-## Project Structure
-
-```
-communityops/
-├── apps/web/              # React + TypeScript frontend
-├── agents/                # Strands Agent definitions (6 agents)
-├── services/
-│   ├── api/               # Lambda API handlers (events, speakers, tasks, etc.)
-│   ├── checkin/            # Check-in service (search, verify, recover, reconcile)
-│   ├── shared/             # Models, DynamoDB repo, audit, validation, policy
-│   └── workflows/          # Step Functions Lambda handlers
-├── tools/                 # Agent tool implementations (registration, payment lookup)
-├── workflows/             # Step Functions ASL definitions
-├── policies/cedar/        # Cedar policy files + schema
-├── knowledge/seed/        # Operational knowledge documents
-├── tests/unit/            # Unit tests (87 tests)
-├── scripts/               # Deploy, destroy, seed scripts
-├── docs/                  # Architecture, data model, security, ADRs
-└── template.yaml          # AWS SAM template
+```mermaid
+flowchart LR
+    U[Community leader or team member] --> CF[CloudFront + private S3 frontend]
+    CF --> C[Amazon Cognito]
+    CF --> API[API Gateway]
+    API --> L[AWS Lambda services]
+    L --> D[(DynamoDB)]
+    L --> S3[Private S3 tickets]
+    L --> B[Amazon Bedrock / Nova Pro]
+    L --> E[EventBridge custom bus]
+    L --> SF[Step Functions workflows]
+    L --> P[Cedar specification + runtime policy]
+    L --> A[(Audit trail)]
+    SF --> L
 ```
 
-## Getting Started
+## Local Development
 
-### Prerequisites
+Prerequisites: Python 3.12+, Node.js 20+, AWS CLI v2, and AWS SAM CLI.
 
-- Python 3.12+
-- Node.js 20+
-- AWS CLI v2 configured
-- AWS SAM CLI
-
-### Local Development
-
-```bash
-# Install Python dependencies
+```powershell
 pip install -e ".[dev]"
-
-# Install frontend dependencies
 npm install --prefix apps/web
-
-# Run backend tests
 pytest tests/unit/ -v
-
-# Frontend checks
 npm run typecheck --prefix apps/web
 npm run lint --prefix apps/web
-npm test --prefix apps/web
+cmd.exe /d /s /c "npm test --prefix apps/web -- --run"
 npm run build --prefix apps/web
 ```
 
-### Frontend configuration
+Copy `apps/web/.env.example` to `apps/web/.env.local` and provide stack output values for `VITE_API_URL`, `VITE_COGNITO_USER_POOL_ID`, and `VITE_COGNITO_CLIENT_ID`. `VITE_USE_MOCK=true` is explicit local UI mode and never a production fallback.
 
-Copy `apps/web/.env.example` to `apps/web/.env.local` and fill it in.
+## Deployment
 
-To run the console against a deployed backend, set `VITE_API_URL`,
-`VITE_COGNITO_USER_POOL_ID` and `VITE_COGNITO_CLIENT_ID` from the stack outputs.
-The signed-in user must belong to the Cognito group matching `VITE_ORG_ID`, or
-the API returns `403`.
+The tracked `samconfig.toml` targets stack `CommunityOps` in `ap-south-1`. Validate and deploy using an explicitly selected AWS profile:
 
-For local UI work without a backend, set `VITE_USE_MOCK=true`. Mock data is
-opt-in only and the console shows a "Demo Mode" badge while it is active. It is
-never used as a fallback: if a real API is configured and fails, the console
-surfaces the error instead of showing fabricated operational data.
-
-### Deploy to AWS
-
-```bash
-./scripts/deploy.sh --stage dev
+```powershell
+sam validate --lint --region ap-south-1 --profile <profile>
+sam build --region ap-south-1 --profile <profile>
+sam deploy --region ap-south-1 --profile <profile>
 ```
 
-The script excludes `apps/web/node_modules` from the Lambda artifact while
-building. Every function uses `CodeUri: .` so that `services`, `tools` and
-`agents` resolve as top-level packages, and SAM's Python builder copies the
-whole `CodeUri` tree with no exclude mechanism of its own.
+Build `apps/web` with the deployed API/Cognito values, sync `apps/web/dist` to the stack’s web bucket, and invalidate the stack’s CloudFront distribution. Never place credentials in environment files committed to Git.
 
-`requirements.txt` exists solely for SAM's Python builder and lists the subset
-of `pyproject.toml` dependencies the deployed handlers actually import.
-`pyproject.toml` remains the authoritative dependency configuration.
+## Current Verification and Limitations
 
-### Seed demo data
+Live AWS verification established CloudFormation, API Gateway, Lambda, DynamoDB, private/encrypted S3 tickets, Cognito demo authentication, tenant isolation, CORS, Check-In/QR, Amazon Bedrock Agent conversation, EventBridge bus ingestion, and a Step Functions incident workflow reaching its human-approval wait.
 
-```bash
-python scripts/seed-demo.py --table CommunityOps-Main-dev --region ap-south-1
-```
+- Leader-only approval decision was not live-rehearsed with a leader identity.
+- Leader-only Incident resolve/reopen was not live-rehearsed.
+- EventBridge bus ingestion was verified, but no EventBridge rule currently targets the Step Functions workflows; the workflow was exercised directly.
 
-Each organization needs a Cognito group named after its organization ID, and
-users must be added to the groups they may access:
+See [the detailed project report](docs/COMMUNITYOPS_PROJECT_REPORT.md) and the existing documents under [`docs/`](docs/).
 
-```bash
-aws cognito-idp create-group --user-pool-id <pool-id> \
-    --group-name ORG-wemakedev --region ap-south-1
-aws cognito-idp admin-add-user-to-group --user-pool-id <pool-id> \
-    --username <email> --group-name ORG-wemakedev --region ap-south-1
-```
+## Judging Alignment
 
-### Validate against a deployed stack
-
-```bash
-python scripts/live-e2e-test.py \
-    --api-url <api-url> --user-pool-id <pool-id> --client-id <client-id> \
-    --username <email> --password-file <path>
-```
-
-This exercises the deployed API end to end: the check-in recovery path, its
-edge cases, idempotency, QR signature verification, cross-tenant isolation and
-the approval flow. It uses no mocks or local fixtures.
-
-## Documentation
-
-- [Architecture](docs/architecture.md)
-- [Agent Architecture](docs/agent-architecture.md)
-- [Data Model](docs/data-model.md)
-- [Security](docs/security.md)
-- [Architecture Decision Records](docs/decisions/)
-
-## AI Tools Disclosure
-
-- **Amazon Bedrock** (Claude Sonnet) — powers agent reasoning via Strands Agents SDK
-- **Kiro** (AI development environment) — used during development for code generation, review, and debugging
-
-## Known Limitations
-
-- The QR signing key falls back to a hardcoded development value. It is not yet
-  supplied to the Lambda functions from Secrets Manager, so QR signatures in the
-  deployed dev stage are not backed by a managed secret.
-- Cedar policy files define the authorization model, but risk classification is
-  evaluated in Python at runtime rather than by a Cedar engine; production would
-  use Amazon Verified Permissions.
-- Organization membership is carried by Cognito groups, which must be
-  provisioned per organization. There is no self-service organization onboarding.
-- The agent definitions under `agents/` are not yet invoked by any deployed
-  Lambda, so the Strands and Bedrock dependencies are deliberately excluded from
-  the deployment artifact. Recommendations in the seeded data are rule-based.
-- RAG/Knowledge Base integration is defined but not connected to Bedrock
-  Knowledge Bases.
-- The Step Functions state machines are deployed but have not been executed
-  end to end against live data.
-- The console is a single-event view scoped to one organization at a time.
-- Lambda logs are plain text; the structured `extra` fields attached to log
-  records are not emitted because no JSON formatter is configured.
+- **01 Idea & Impact** — targets continuous operational coordination while preserving human authority.
+- **02 Built on AWS** — deployed across Cognito, API Gateway, Lambda, DynamoDB, S3, EventBridge, Step Functions, Bedrock, CloudFront, SAM, and CloudFormation.
+- **03 Learning** — reflects documented iteration with Kiro, AWS documentation, serverless services, identity, agents, and deployment debugging.
+- **04 Execution** — complete operational screens and critical AWS paths were locally tested and live exercised.
+- **05 Demo** — a focused operational narrative demonstrates attention, bounded Agent action, approval, recovery, and audit evidence.
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE).
