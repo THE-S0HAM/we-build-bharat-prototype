@@ -11,7 +11,7 @@ Parameters:
     AllowedValues: [dev, staging, prod]
   BedrockModelId:
     Type: String
-    Default: anthropic.claude-sonnet-4-20250514-v1:0
+    Default: amazon.nova-pro-v1:0
   BedrockRegion:
     Type: String
     Default: us-east-1
@@ -123,6 +123,7 @@ Resources:
         AllowOrigin: "'*'"
       Auth:
         DefaultAuthorizer: CognitoAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
         Authorizers:
           CognitoAuthorizer:
             UserPoolArn: !GetAtt UserPool.Arn
