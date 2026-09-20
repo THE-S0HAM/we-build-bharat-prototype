@@ -17,7 +17,6 @@ interface Turn {
   content: string;
   evidence: AgentEvidence[];
   approvalCount: number;
-  failed?: boolean;
 }
 
 function actionLabel(identifier: string): string {
@@ -97,10 +96,9 @@ export function AgentConsole({ eventId }: EventScopedPageProps) {
             id: sequence.current++,
             role: "assistant",
             content:
-              "CommunityOps could not answer that request. Your operational data was not changed.",
+              "The operation did not complete cleanly. An earlier action may already have been applied, so verify the current state before retrying.",
             evidence: [],
             approvalCount: 0,
-            failed: true,
           },
         ]);
         setSending(false);
@@ -163,9 +161,6 @@ export function AgentConsole({ eventId }: EventScopedPageProps) {
                         ))}
                       </ul>
                     </>
-                  )}
-                  {turn.failed && (
-                    <p className="ops-list__meta">You can retry by sending the question again.</p>
                   )}
                 </div>
               ))}

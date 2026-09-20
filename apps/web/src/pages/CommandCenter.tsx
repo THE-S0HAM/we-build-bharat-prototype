@@ -232,15 +232,19 @@ export function CommandCenter() {
   const [handledLoading, setHandledLoading] = useState(false);
   const [handledFailure, setHandledFailure] = useState<unknown>(null);
   const [attention, setAttention] = useState<readonly AttentionItem[]>([]);
+  const [attentionEventId, setAttentionEventId] = useState<string | null>(null);
   const [attentionLoading, setAttentionLoading] = useState(false);
   const [attentionFailure, setAttentionFailure] = useState<unknown>(null);
+  const [attentionFailureEventId, setAttentionFailureEventId] = useState<string | null>(null);
   const [attentionToken, setAttentionToken] = useState(0);
   const [handledToken, setHandledToken] = useState(0);
 
   const [health, setHealth] = useState<EventHealth | null>(null);
   const [brief, setBrief] = useState<OperationsBrief | null>(null);
+  const [operationalEventId, setOperationalEventId] = useState<string | null>(null);
   const [operationalLoading, setOperationalLoading] = useState(false);
   const [operationalFailure, setOperationalFailure] = useState<unknown>(null);
+  const [operationalFailureEventId, setOperationalFailureEventId] = useState<string | null>(null);
   const [operationalToken, setOperationalToken] = useState(0);
 
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -377,13 +381,36 @@ export function CommandCenter() {
   }, [activeEventId, handledToken, report]);
 
   useEffect(() => {
-    if (activeEventId === null) { setAttention([]); setAttentionLoading(false); setAttentionFailure(null); return; }
+    if (activeEventId === null) {
+      setAttention([]);
+      setAttentionEventId(null);
+      setAttentionLoading(false);
+      setAttentionFailure(null);
+      setAttentionFailureEventId(null);
+      return;
+    }
     let active = true;
+    setAttention([]);
+    setAttentionEventId(null);
     setAttentionLoading(true);
     setAttentionFailure(null);
+    setAttentionFailureEventId(null);
     getAttention(activeEventId).then(
-      (result) => { if (active) { setAttention(result.attention_items); setAttentionLoading(false); } },
-      (error: unknown) => { if (active) { setAttention([]); setAttentionFailure(report(error)); setAttentionLoading(false); } },
+      (result) => {
+        if (active) {
+          setAttention(result.attention_items);
+          setAttentionEventId(activeEventId);
+          setAttentionLoading(false);
+        }
+      },
+      (error: unknown) => {
+        if (active) {
+          setAttention([]);
+          setAttentionFailure(report(error));
+          setAttentionFailureEventId(activeEventId);
+          setAttentionLoading(false);
+        }
+      },
     );
     return () => { active = false; };
   }, [activeEventId, attentionToken, report]);
@@ -392,27 +419,33 @@ export function CommandCenter() {
     if (activeEventId === null) {
       setHealth(null);
       setBrief(null);
+      setOperationalEventId(null);
       setOperationalLoading(false);
       setOperationalFailure(null);
+      setOperationalFailureEventId(null);
       return;
     }
 
     let active = true;
     setOperationalLoading(true);
     setOperationalFailure(null);
+    setOperationalFailureEventId(null);
     setHealth(null);
     setBrief(null);
+    setOperationalEventId(null);
 
     Promise.all([getEventHealth(activeEventId), getBrief(activeEventId)]).then(
       ([nextHealth, nextBrief]) => {
         if (!active) return;
         setHealth(nextHealth);
         setBrief(nextBrief);
+        setOperationalEventId(activeEventId);
         setOperationalLoading(false);
       },
       (error: unknown) => {
         if (!active) return;
         setOperationalFailure(report(error));
+        setOperationalFailureEventId(activeEventId);
         setOperationalLoading(false);
       },
     );
@@ -479,6 +512,11 @@ export function CommandCenter() {
     </>
   );
 
+  const attentionIsCurrent = attentionEventId === activeEventId;
+  const attentionFailureIsCurrent = attentionFailureEventId === activeEventId;
+  const operationalIsCurrent = operationalEventId === activeEventId;
+  const operationalFailureIsCurrent = operationalFailureEventId === activeEventId;
+
   return (
     <div className="page command-center">
       <PageHeader title={greeting(displayName)} context={contextLine} />
@@ -536,6 +574,21 @@ export function CommandCenter() {
             onSelect={setActiveEvent}
           />
 
+          <section className="page-section" aria-labelledby="command-operational-state-heading">
+            <h2 className="page-section__heading" id="command-operational-state-heading">Current operational state</h2>
+            {activeEventId === null ? (
+              <EmptyState title="No active event selected." description="Choose an event to review its current operational state." />
+            ) : operationalLoading || (!operationalIsCurrent && !operationalFailureIsCurrent) ? (
+              <SkeletonRegion label="Getting the current operational state…"><Skeleton shape="block" /></SkeletonRegion>
+            ) : operationalFailureIsCurrent && operationalFailure !== null ? (
+              <ApiErrorState error={operationalFailure} onRetry={reloadOperationalState} />
+            ) : operationalIsCurrent && health !== null && brief !== null ? (
+              <OperationalState health={health} brief={brief} />
+            ) : (
+              <EmptyState title="No operational state is available." description="CommunityOps has no current health or brief facts for this event." />
+            )}
+          </section>
+
           <AgentStatus
             heading={HANDLED_HEADING}
             description={handledDescription(activeEvent?.name ?? null)}
@@ -548,7 +601,7 @@ export function CommandCenter() {
 
           <section className="page-section" aria-labelledby="command-attention-heading">
             <h2 className="page-section__heading" id="command-attention-heading">Attention after the top decision</h2>
-            {attentionLoading ? <Skeleton shape="line" /> : attentionFailure !== null ? <ApiErrorState error={attentionFailure} onRetry={reloadOverview} /> : attention.length === 0 ? <p className="page-section__empty">Nothing else needs attention for this event.</p> : <ul className="ops-list">{attention.filter((item) => item.resource_id !== approval?.approval_id).map((item) => <li className="ops-list__item" key={`${item.kind}-${item.resource_id}`}><p className="ops-list__title">{item.title}</p><p className="ops-list__meta">{item.severity} · {item.detail}</p></li>)}</ul>}
+            {activeEventId === null ? <p className="page-section__empty">Choose an event to review its attention items.</p> : attentionLoading || (!attentionIsCurrent && !attentionFailureIsCurrent) ? <Skeleton shape="line" /> : attentionFailureIsCurrent && attentionFailure !== null ? <ApiErrorState error={attentionFailure} onRetry={reloadAttention} /> : !attentionIsCurrent || attention.length === 0 ? <p className="page-section__empty">Nothing else needs attention for this event.</p> : <ul className="ops-list">{attention.filter((item) => item.resource_id !== approval?.approval_id).map((item) => <li className="ops-list__item" key={`${item.kind}-${item.resource_id}`}><p className="ops-list__title">{item.title}</p><p className="ops-list__meta">{item.severity} · {item.detail}</p></li>)}</ul>}
           </section>
 
           {overview === null ? null : (

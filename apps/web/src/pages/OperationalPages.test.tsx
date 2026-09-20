@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({ attendees: vi.fn(), budget: vi.fn(), expenses: v
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../api")>()), getAttendeeOps: api.attendees, getBudget: api.budget, getExpenses: api.expenses, projectBudget: api.projection, getAgentCapabilities: api.capabilities, getAgentActivity: api.activity, agentChat: api.chat }));
 const wrapper = (page: React.ReactNode) => render(<MemoryRouter><SessionContext.Provider value={{ status: "authenticated", user: { userId: "USR-1", name: "Asha", email: "asha@example.org", role: "LEADER", organizations: ["ORG-test"], isDemo: false }, refresh: () => Promise.resolve(), signOut: () => undefined }}>{page}</SessionContext.Provider></MemoryRouter>);
 beforeEach(() => {
+  api.chat.mockReset();
   api.attendees.mockResolvedValue({ event_id: "EVT-1", event_name: "Event", summary: { total_registered: 10, confirmed: 8, cancelled: 1, waitlisted: 1, checked_in: 2, not_checked_in: 8, accommodation_required: 1, dietary_provided: 7, dietary_missing: 3, arrival_confirmed: 6, arrival_conflicts: 1, missing_information: 3, data_completeness_percent: 70, expected_attendees: 10, registration_target: 10 }, funnel: [{ stage: "Registered", count: 10, detail: "Signed up" }, { stage: "Information complete", count: 7, detail: "Details provided" }], exceptions: { missing_dietary: [{ registration_id: "REG-1", attendee_name: "Priya", ticket_type: "GENERAL" }], missing_dietary_total: 1, accommodation_pending: [], accommodation_pending_total: 0, arrival_unconfirmed: [], arrival_unconfirmed_total: 0 } });
   api.budget.mockResolvedValue({ event_id: "EVT-1", currency: "INR", total_budget: 100000, allocated: 90000, spent: 15000, committed: 10000, remaining: 75000, unallocated: 10000, utilization_percent: 25, categories: [{ category: "VENUE", allocated: 50000, spent: 15000, committed: 10000, remaining: 25000, utilization_percent: 50 }], exists: true, total_budget_formatted: "1,00,000", remaining_formatted: "75,000", categories_available: ["VENUE"] });
   api.expenses.mockResolvedValue({ expenses: [], count: 0, total_inr: 0 });
@@ -48,5 +49,28 @@ describe("operational pages", () => {
     const rendered = document.body.textContent ?? "";
     expect(rendered).not.toMatch(/record_expense|APR-1|hidden/);
     await waitFor(() => expect(api.chat).toHaveBeenCalledOnce());
+  });
+  it("treats a rejected agent request as an unknown outcome", async () => {
+    api.chat.mockRejectedValueOnce(new Error("connection lost"));
+    wrapper(<AgentConsole eventId="EVT-1" />);
+    await screen.findByText(/2 capabilities/);
+    await userEvent.type(screen.getByLabelText("Ask CommunityOps"), "Record this expense");
+    await userEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    expect(
+      await screen.findByText(
+        "The operation did not complete cleanly. An earlier action may already have been applied, so verify the current state before retrying.",
+      ),
+    ).toBeInTheDocument();
+    const rendered = (document.body.textContent ?? "").toLowerCase();
+    expect(rendered).not.toMatch(/operational data was not changed|no (operational )?data (was )?changed|safe to retry|retry by sending/);
+  });
+  it("does not submit a blank agent request", async () => {
+    wrapper(<AgentConsole eventId="EVT-1" />);
+    await screen.findByText(/2 capabilities/);
+    const ask = screen.getByRole("button", { name: "Ask" });
+    expect(ask).toBeDisabled();
+    await userEvent.click(ask);
+    expect(api.chat).not.toHaveBeenCalled();
   });
 });

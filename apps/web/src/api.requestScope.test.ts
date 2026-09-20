@@ -175,7 +175,10 @@ const CLIENT_CALLS: readonly ClientCall[] = [
   { name: "reopenIncident", kind: "write", issue: (api) => api.reopenIncident(EVENT, "INC-1", "Recurrence") },
   { name: "getAuditLog", kind: "read", issue: (api) => api.getAuditLog(EVENT) },
   { name: "getBudget", kind: "read", issue: (api) => api.getBudget(EVENT) },
+  { name: "setBudget", kind: "write", issue: (api) => api.setBudget(EVENT, { total_budget: 100000 }) },
+  { name: "allocateBudget", kind: "write", issue: (api) => api.allocateBudget(EVENT, { category: "VENUE", amount_inr: 50000, notes: "Deposit" }) },
   { name: "getExpenses", kind: "read", issue: (api) => api.getExpenses(EVENT) },
+  { name: "recordExpense", kind: "write", issue: (api) => api.recordExpense(EVENT, { category: "VENUE", amount_inr: 1000, description: "Deposit", vendor: "Venue", approval_id: "APR-1" }) },
   { name: "projectBudget", kind: "write", issue: (api) => api.projectBudget(EVENT, "VENUE", 1000) },
   { name: "getAgentCapabilities", kind: "read", issue: (api) => api.getAgentCapabilities() },
   { name: "getAgentActivity", kind: "read", issue: (api) => api.getAgentActivity(EVENT) },
@@ -406,6 +409,30 @@ describe("mutation wire contracts", () => {
       notes: "",
       edited_action: "Use the confirmed backup",
     });
+  });
+
+  it("uses exact budget mutation methods, paths, fields, and organization scope", async () => {
+    const fetchMock = stubFetch();
+    const api = await loadApi();
+
+    await api.setBudget(EVENT, { total_budget: 0 });
+    await api.allocateBudget(EVENT, { category: "VENUE", amount_inr: 50000, notes: "Deposit" });
+    await api.recordExpense(EVENT, { category: "VENUE", amount_inr: 12500, description: "Hall deposit", vendor: "City Hall", approval_id: "APR-1" });
+
+    const [setUrl, setInit] = fetchMock.mock.calls[0] ?? [];
+    expect(String(setUrl)).toContain(`/events/${EVENT}/budget`);
+    expect(setInit?.method).toBe("PUT");
+    expect(JSON.parse(String(setInit?.body))).toEqual({ total_budget: 0, organization_id: "ORG-wemakedev" });
+
+    const [allocationUrl, allocationInit] = fetchMock.mock.calls[1] ?? [];
+    expect(String(allocationUrl)).toContain(`/events/${EVENT}/budget/allocations`);
+    expect(allocationInit?.method).toBe("POST");
+    expect(JSON.parse(String(allocationInit?.body))).toEqual({ category: "VENUE", amount_inr: 50000, notes: "Deposit", organization_id: "ORG-wemakedev" });
+
+    const [expenseUrl, expenseInit] = fetchMock.mock.calls[2] ?? [];
+    expect(String(expenseUrl)).toContain(`/events/${EVENT}/budget/expenses`);
+    expect(expenseInit?.method).toBe("POST");
+    expect(JSON.parse(String(expenseInit?.body))).toEqual({ category: "VENUE", amount_inr: 12500, description: "Hall deposit", vendor: "City Hall", approval_id: "APR-1", organization_id: "ORG-wemakedev" });
   });
 
   it("posts task assignment and reason to the dedicated reassign endpoint", async () => {

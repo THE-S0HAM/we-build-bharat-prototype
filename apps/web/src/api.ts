@@ -192,13 +192,12 @@ export interface SetBudgetInput { readonly total_budget: number; }
 export interface BudgetAllocationInput { readonly category: string; readonly amount_inr: number; readonly notes?: string; }
 export interface RecordExpenseInput { readonly category: string; readonly amount_inr: number; readonly description: string; readonly vendor?: string; readonly approval_id?: string; }
 export interface BudgetMutationResponse { readonly message: string; }
-export interface RecordExpenseResponse extends BudgetMutationResponse { readonly expense_id: string; readonly budget: BudgetSummary; }
 
 export const getBudget = (eventId: string): Promise<BudgetSummary> => apiFetch((org) => ({ path: `/events/${pathId(eventId)}/budget?${orgQuery(org)}` }));
 export const setBudget = (eventId: string, input: SetBudgetInput): Promise<BudgetMutationResponse> => apiFetch((org) => ({ path: `/events/${pathId(eventId)}/budget`, init: { method: "PUT", body: jsonBody(org, input) } }));
 export const allocateBudget = (eventId: string, input: BudgetAllocationInput): Promise<BudgetMutationResponse> => apiFetch((org) => ({ path: `/events/${pathId(eventId)}/budget/allocations`, init: { method: "POST", body: jsonBody(org, input) } }));
 export const getExpenses = (eventId: string): Promise<{ expenses: Expense[]; count: number; total_inr: number }> => apiFetch((org) => ({ path: `/events/${pathId(eventId)}/budget/expenses?${orgQuery(org)}` }));
-export const recordExpense = (eventId: string, input: RecordExpenseInput): Promise<RecordExpenseResponse> => apiFetch((org) => ({ path: `/events/${pathId(eventId)}/budget/expenses`, init: { method: "POST", body: jsonBody(org, input) } }));
+export const recordExpense = (eventId: string, input: RecordExpenseInput): Promise<BudgetMutationResponse> => apiFetch((org) => ({ path: `/events/${pathId(eventId)}/budget/expenses`, init: { method: "POST", body: jsonBody(org, input) } }));
 export const projectBudget = (eventId: string, category: string, amountInr: number): Promise<{ projection: BudgetProjection; budget: BudgetSummary }> => apiFetch((org) => ({ path: `/events/${pathId(eventId)}/budget/projection`, init: { method: "POST", body: jsonBody(org, { category, amount_inr: amountInr }) } }));
 
 export const getAuditLog = (eventId: string, limit = 100): Promise<{ audit_events: AuditEvent[]; count: number }> => apiFetch((org) => ({ path: `/events/${pathId(eventId)}/audit?${orgQuery(org, [["limit", limit]])}` }));

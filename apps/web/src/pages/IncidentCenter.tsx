@@ -36,7 +36,7 @@
  * analysis fields — is in `./incidentModel.ts`.
  */
 
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { addIncidentComment, getIncident, getApprovals, getIncidents, reopenIncident, resolveIncident, updateIncident } from "../api";
@@ -62,6 +62,7 @@ type IncidentUpdate = Partial<Pick<Incident, "severity">> & {
 import {
   affectedResourceLabel,
   derivedApprovalsFor,
+  isResolved,
   orderIncidents,
   readIncidentAnalysis,
   severityDistribution,
@@ -83,7 +84,6 @@ interface IncidentDraft {
 }
 
 const GENERIC_EDITABLE_STATUSES: readonly GenericIncidentStatus[] = [
-  "OPEN",
   "REPORTED",
   "DETECTED",
   "ACKNOWLEDGED",
@@ -153,6 +153,8 @@ export function IncidentCenter({ eventId }: EventScopedPageProps) {
   const [commentSaving, setCommentSaving] = useState(false);
   const [commentFailure, setCommentFailure] = useState<unknown>(null);
   const [transitionFeedback, setTransitionFeedback] = useState("");
+  const [lifecycleSaving, setLifecycleSaving] = useState(false);
+  const lifecycleMutationLock = useRef(false);
   const [resolutionSummary, setResolutionSummary] = useState("");
   const [rootCause, setRootCause] = useState("");
   const [actionsTaken, setActionsTaken] = useState("");
@@ -285,25 +287,71 @@ export function IncidentCenter({ eventId }: EventScopedPageProps) {
     );
   }, [commentBody, commentSaving, commentTaskTeam, commentTaskTitle, createTaskFromComment, eventId, openIncident, report]);
 
-  const resolveOpenIncident = useCallback(() => {
-    if (openIncident === null || resolutionSummary.trim() === "") return;
-    resolveIncident(eventId, openIncident.incident_id, {
-      resolution_summary: resolutionSummary.trim(),
-      ...(rootCause.trim() ? { root_cause: rootCause.trim() } : {}),
-      ...(actionsTaken.trim() ? { actions_taken: actionsTaken.split("\n").map((line) => line.trim()).filter(Boolean) } : {}),
-    }).then(
-      (result) => { setTransitionFeedback(result.message); setIncidents((current) => current.map((item) => item.incident_id === openIncident.incident_id ? { ...item, status: result.status, resolution_summary: resolutionSummary.trim() } : item)); },
-      (error: unknown) => setDetailFailure(report(error)),
-    );
-  }, [actionsTaken, eventId, openIncident, report, resolutionSummary, rootCause]);
+  const refreshAfterLifecycleMutation = useCallback(async (incidentId: string): Promise<void> => {
+    const [detail, refreshed] = await Promise.all([
+      getIncident(eventId, incidentId),
+      getIncidents(eventId),
+    ]);
 
-  const reopenOpenIncident = useCallback(() => {
-    if (openIncident === null) return;
-    reopenIncident(eventId, openIncident.incident_id).then(
-      (result) => { setTransitionFeedback(result.message); setIncidents((current) => current.map((item) => item.incident_id === openIncident.incident_id ? { ...item, status: result.status, resolved_at: null } : item)); },
-      (error: unknown) => setDetailFailure(report(error)),
+    setIncidents(
+      refreshed.incidents.map((item) =>
+        item.incident_id === incidentId ? detail.incident : item,
+      ),
     );
-  }, [eventId, openIncident, report]);
+    setComments(detail.comments);
+    setDraft(draftOf(detail.incident));
+    setDetailFailure(null);
+  }, [eventId]);
+
+  const resolveOpenIncident = useCallback(async () => {
+    if (
+      openIncident === null ||
+      resolutionSummary.trim() === "" ||
+      lifecycleMutationLock.current
+    ) return;
+
+    const incidentId = openIncident.incident_id;
+    lifecycleMutationLock.current = true;
+    setLifecycleSaving(true);
+    setDetailFailure(null);
+    setTransitionFeedback("");
+
+    try {
+      const result = await resolveIncident(eventId, incidentId, {
+        resolution_summary: resolutionSummary.trim(),
+        ...(rootCause.trim() ? { root_cause: rootCause.trim() } : {}),
+        ...(actionsTaken.trim() ? { actions_taken: actionsTaken.split("\n").map((line) => line.trim()).filter(Boolean) } : {}),
+      });
+      await refreshAfterLifecycleMutation(incidentId);
+      setTransitionFeedback(result.message);
+    } catch (error: unknown) {
+      setDetailFailure(report(error) ?? error);
+    } finally {
+      lifecycleMutationLock.current = false;
+      setLifecycleSaving(false);
+    }
+  }, [actionsTaken, eventId, openIncident, refreshAfterLifecycleMutation, report, resolutionSummary, rootCause]);
+
+  const reopenOpenIncident = useCallback(async () => {
+    if (openIncident === null || lifecycleMutationLock.current) return;
+
+    const incidentId = openIncident.incident_id;
+    lifecycleMutationLock.current = true;
+    setLifecycleSaving(true);
+    setDetailFailure(null);
+    setTransitionFeedback("");
+
+    try {
+      const result = await reopenIncident(eventId, incidentId);
+      await refreshAfterLifecycleMutation(incidentId);
+      setTransitionFeedback(result.message);
+    } catch (error: unknown) {
+      setDetailFailure(report(error) ?? error);
+    } finally {
+      lifecycleMutationLock.current = false;
+      setLifecycleSaving(false);
+    }
+  }, [eventId, openIncident, refreshAfterLifecycleMutation, report]);
 
   const columns = useMemo<readonly DataTableColumn<Incident>[]>(
     () => [
@@ -606,12 +654,23 @@ export function IncidentCenter({ eventId }: EventScopedPageProps) {
 
           {isLeader && <section className="drawer-section" aria-labelledby="incident-transition-heading">
             <h3 className="drawer-heading" id="incident-transition-heading">Resolution</h3>
-            {openIncident.status === "RESOLVED" || openIncident.status === "CLOSED" ? <button className="btn" type="button" onClick={reopenOpenIncident}>Reopen incident</button> : <form className="ops-form" onSubmit={(event) => { event.preventDefault(); resolveOpenIncident(); }}>
-              <label className="form-label" htmlFor="resolution-summary">Resolution summary</label><textarea className="input" id="resolution-summary" rows={3} required value={resolutionSummary} onChange={(event) => setResolutionSummary(event.target.value)} />
-              <label className="form-label" htmlFor="root-cause">Root cause</label><textarea className="input" id="root-cause" rows={2} value={rootCause} onChange={(event) => setRootCause(event.target.value)} />
-              <label className="form-label" htmlFor="actions-taken">Actions taken, one per line</label><textarea className="input" id="actions-taken" rows={3} value={actionsTaken} onChange={(event) => setActionsTaken(event.target.value)} />
-              <button className="btn btn-primary" type="submit" disabled={!resolutionSummary.trim()}>Resolve incident</button>
-            </form>}
+            {isResolved(openIncident) ? (
+              <button className="btn" type="button" onClick={reopenOpenIncident} disabled={lifecycleSaving}>
+                {lifecycleSaving ? "Reopening…" : "Reopen incident"}
+              </button>
+            ) : (
+              <form className="ops-form" onSubmit={(event) => { event.preventDefault(); resolveOpenIncident(); }}>
+                <fieldset className="form-fields" disabled={lifecycleSaving}>
+                  <label className="form-label" htmlFor="resolution-summary">Resolution summary</label>
+                  <textarea className="input" id="resolution-summary" rows={3} required value={resolutionSummary} onChange={(event) => setResolutionSummary(event.target.value)} />
+                  <label className="form-label" htmlFor="root-cause">Root cause</label>
+                  <textarea className="input" id="root-cause" rows={2} value={rootCause} onChange={(event) => setRootCause(event.target.value)} />
+                  <label className="form-label" htmlFor="actions-taken">Actions taken, one per line</label>
+                  <textarea className="input" id="actions-taken" rows={3} value={actionsTaken} onChange={(event) => setActionsTaken(event.target.value)} />
+                  <button className="btn btn-primary" type="submit" disabled={!resolutionSummary.trim()}>{lifecycleSaving ? "Resolving…" : "Resolve incident"}</button>
+                </fieldset>
+              </form>
+            )}
             {transitionFeedback && <p className="form-result" role="status">{transitionFeedback}</p>}
           </section>}
 
@@ -636,7 +695,7 @@ export function IncidentCenter({ eventId }: EventScopedPageProps) {
 
             {/* One `disabled` on the group locks every related control while the
                 change is in flight (requirement 13.11). */}
-            <fieldset className="form-fields" disabled={save.kind === "saving"}>
+            <fieldset className="form-fields" disabled={save.kind === "saving" || lifecycleSaving}>
               <legend className="form-legend">
                 Where this incident stands, and how severe it is. CommunityOps&apos; own analysis
                 stays as it recorded it.
@@ -697,7 +756,7 @@ export function IncidentCenter({ eventId }: EventScopedPageProps) {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={save.kind === "saving" || !hasChanges}
+                  disabled={save.kind === "saving" || lifecycleSaving || !hasChanges}
                 >
                   {save.kind === "saving" ? "Saving…" : "Save change"}
                 </button>

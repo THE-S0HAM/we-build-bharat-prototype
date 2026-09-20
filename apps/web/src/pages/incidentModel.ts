@@ -64,9 +64,12 @@ export function resolvedTimestamp(incident: Incident): string | null {
   return typeof timestamp === "string" && timestamp.trim() !== "" ? timestamp : null;
 }
 
-/** The backend sets `resolved_at` and status RESOLVED together; either is enough. */
+/** The exact terminal set shared by the backend incident model and list endpoint. */
+const CLOSED_INCIDENT_STATUSES: readonly string[] = ["RESOLVED", "CLOSED", "REJECTED"];
+
+/** Closed incidents are classified by backend lifecycle status; REOPENED stays active. */
 export function isResolved(incident: Incident): boolean {
-  return incident.status === "RESOLVED" || resolvedTimestamp(incident) !== null;
+  return CLOSED_INCIDENT_STATUSES.includes(incident.status);
 }
 
 export interface OrderedIncidents {

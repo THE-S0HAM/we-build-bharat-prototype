@@ -19,7 +19,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
@@ -450,20 +450,47 @@ describe("incident transition boundaries", () => {
     for (const status of ["RESOLVED", "REOPENED", "CLOSED", "REJECTED", "ESCALATED"]) {
       expect(options).not.toContain(status);
     }
-    expect(options).toEqual(expect.arrayContaining(["OPEN", "ACKNOWLEDGED", "ANALYZING", "EXECUTING"]));
+    expect(options).toEqual(expect.arrayContaining(["REPORTED", "ACKNOWLEDGED", "ANALYZING", "EXECUTING"]));
+    expect(options).not.toContain("OPEN");
   });
 
-  it("uses the dedicated resolve endpoint", async () => {
+  it("locks rapid resolve activation and renders the authoritative refreshed incident", async () => {
     const selected = incident({ incident_id: "INC-resolve", title: "Resolve safely" });
-    api.incidents.mockResolvedValue({ incidents: [selected], count: 1 });
-    api.detail.mockResolvedValue({ incident: selected, comments: [], comment_count: 0 });
+    const resolved = {
+      ...selected,
+      status: "RESOLVED",
+      resolved_at: "2026-10-15T10:30:00Z",
+      resolution_summary: "Authoritative backend resolution",
+    };
+    api.incidents
+      .mockResolvedValueOnce({ incidents: [selected], count: 1 })
+      .mockResolvedValueOnce({ incidents: [resolved], count: 1 });
+    api.detail
+      .mockResolvedValueOnce({ incident: selected, comments: [], comment_count: 0 })
+      .mockResolvedValueOnce({
+        incident: resolved,
+        comments: [{ comment_id: "CMT-resolved", incident_id: selected.incident_id, event_id: EVENT_ID, body: "Verified by the response team", author_id: "USR-1", author_name: "Asha", author_type: "user", created_at: "2026-10-15T10:31:00Z" }],
+        comment_count: 1,
+      });
     api.resolve.mockResolvedValue({ incident_id: selected.incident_id, status: "RESOLVED", message: "Incident resolved" });
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "View details for Resolve safely" }));
     await userEvent.type(screen.getByLabelText("Resolution summary"), "  Backup confirmed  ");
-    await userEvent.click(screen.getByRole("button", { name: "Resolve incident" }));
+
+    const resolveButton = screen.getByRole("button", { name: "Resolve incident" });
+    fireEvent.click(resolveButton);
+    fireEvent.click(resolveButton);
+
+    expect(api.resolve).toHaveBeenCalledTimes(1);
     expect(api.resolve).toHaveBeenCalledWith(EVENT_ID, "INC-resolve", { resolution_summary: "Backup confirmed" });
     expect(api.update).not.toHaveBeenCalled();
+    expect(await screen.findByText("Incident resolved")).toBeInTheDocument();
+    const drawer = screen.getByRole("dialog");
+    expect(within(drawer).getByText("Authoritative backend resolution")).toBeInTheDocument();
+    expect(within(drawer).getByText("Verified by the response team")).toBeInTheDocument();
+    expect(within(drawer).getByText("Resolved", { selector: "dt" })).toBeInTheDocument();
+    expect(api.detail).toHaveBeenCalledTimes(2);
+    expect(api.incidents).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -489,15 +516,30 @@ describe("terminal incident presentation", () => {
     expect(drawer.textContent).not.toMatch(/1970|invalid date|time unavailable/i);
   });
 
-  it("clears the resolved timestamp locally when a leader reopens an incident", async () => {
+  it("locks rapid reopen activation and renders the authoritative refreshed incident", async () => {
     const selected = incident({
       incident_id: "INC-reopen",
       title: "Reopen locally",
       status: "RESOLVED",
       resolved_at: "2026-10-15T10:00:00Z",
     });
-    api.incidents.mockResolvedValue({ incidents: [selected], count: 1 });
-    api.detail.mockResolvedValue({ incident: selected, comments: [], comment_count: 0 });
+    const reopened = {
+      ...selected,
+      title: "Reopened from authoritative detail",
+      status: "REOPENED",
+      resolved_at: null,
+      recommendation: "Authoritative reopened recommendation",
+    };
+    api.incidents
+      .mockResolvedValueOnce({ incidents: [selected], count: 1 })
+      .mockResolvedValueOnce({ incidents: [reopened], count: 1 });
+    api.detail
+      .mockResolvedValueOnce({ incident: selected, comments: [], comment_count: 0 })
+      .mockResolvedValueOnce({
+        incident: reopened,
+        comments: [{ comment_id: "CMT-reopened", incident_id: selected.incident_id, event_id: EVENT_ID, body: "Authoritative reopen note", author_id: "USR-1", author_name: "Asha", author_type: "user", created_at: "2026-10-15T10:05:00Z" }],
+        comment_count: 1,
+      });
     api.reopen.mockResolvedValue({
       incident_id: selected.incident_id,
       status: "REOPENED",
@@ -510,26 +552,42 @@ describe("terminal incident presentation", () => {
 
     const drawer = screen.getByRole("dialog");
     expect(within(drawer).getByText("Resolved", { selector: "dt" })).toBeInTheDocument();
-    await userEvent.click(within(drawer).getByRole("button", { name: "Reopen incident" }));
+    const reopenButton = within(drawer).getByRole("button", { name: "Reopen incident" });
+    fireEvent.click(reopenButton);
+    fireEvent.click(reopenButton);
 
+    expect(api.reopen).toHaveBeenCalledTimes(1);
+    expect(api.reopen).toHaveBeenCalledWith(EVENT_ID, "INC-reopen");
+    expect(await screen.findByText("Incident reopened")).toBeInTheDocument();
     await waitFor(() => {
       expect(within(drawer).queryByText("Resolved", { selector: "dt" })).not.toBeInTheDocument();
     });
-    expect(api.reopen).toHaveBeenCalledWith(EVENT_ID, "INC-reopen");
-    expect(rowTitles("Active incidents")[0]).toContain("Reopen locally");
+    expect(within(drawer).getByText("Authoritative reopened recommendation")).toBeInTheDocument();
+    expect(within(drawer).getByText("Authoritative reopen note")).toBeInTheDocument();
+    expect(rowTitles("Active incidents")[0]).toContain("Reopened from authoritative detail");
+    expect(api.detail).toHaveBeenCalledTimes(2);
+    expect(api.incidents).toHaveBeenCalledTimes(2);
     expect(drawer.textContent).not.toMatch(/1970|invalid date|time unavailable/i);
   });
 
-  it("does not render the generic update form for a resolved incident", async () => {
-    const selected = incident({ incident_id: "INC-done-form", title: "Already resolved", status: "RESOLVED", resolved_at: "2026-10-15T10:00:00Z" });
-    api.incidents.mockResolvedValue({ incidents: [selected], count: 1 });
-    api.detail.mockResolvedValue({ incident: selected, comments: [], comment_count: 0 });
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Show 1 resolved" }));
-    await userEvent.click(screen.getByRole("button", { name: "View details for Already resolved" }));
-    const drawer = screen.getByRole("dialog");
-    expect(within(drawer).getByRole("button", { name: "Reopen incident" })).toBeInTheDocument();
-    expect(within(drawer).queryByRole("heading", { name: "Record a change" })).not.toBeInTheDocument();
-    expect(within(drawer).queryByLabelText("Incident status")).not.toBeInTheDocument();
-  });
+  it.each(["RESOLVED", "CLOSED", "REJECTED"] as const)(
+    "offers dedicated reopen and no generic update form for %s",
+    async (status) => {
+      const selected = incident({
+        incident_id: `INC-${status.toLowerCase()}`,
+        title: `${status} incident`,
+        status,
+        resolved_at: "2026-10-15T10:00:00Z",
+      });
+      api.incidents.mockResolvedValue({ incidents: [selected], count: 1 });
+      api.detail.mockResolvedValue({ incident: selected, comments: [], comment_count: 0 });
+      renderPage();
+      await userEvent.click(await screen.findByRole("button", { name: "Show 1 resolved" }));
+      await userEvent.click(screen.getByRole("button", { name: `View details for ${status} incident` }));
+      const drawer = screen.getByRole("dialog");
+      expect(within(drawer).getByRole("button", { name: "Reopen incident" })).toBeInTheDocument();
+      expect(within(drawer).queryByRole("heading", { name: "Record a change" })).not.toBeInTheDocument();
+      expect(within(drawer).queryByLabelText("Incident status")).not.toBeInTheDocument();
+    },
+  );
 });

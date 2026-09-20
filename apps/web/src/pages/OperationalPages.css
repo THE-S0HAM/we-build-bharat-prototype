@@ -25,3 +25,8 @@
 .ops-compose { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3); align-items: end; }
 .ops-capabilities { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--sp-4); }
 @media (max-width: 900px) { .ops-funnel__row, .ops-form__row, .ops-compose { grid-template-columns: 1fr; } }
+.ops-announcement { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); background: var(--brand-soft); color: var(--brand-strong); font-size: var(--fs-support); font-weight: var(--fw-medium); }
+.ops-announcement:empty { display: none; }
+.ops-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--sp-4); align-items: start; }
+.ops-form h3 { margin: 0; font-size: var(--fs-card-title); }
+.ops-form textarea.input { min-height: 5rem; resize: vertical; }

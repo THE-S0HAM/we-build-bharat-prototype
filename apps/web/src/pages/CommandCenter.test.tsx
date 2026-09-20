@@ -14,7 +14,7 @@
  * the requirements are about what those components produce together.
  */
 
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,7 +29,7 @@ import {
 } from "../command/commandView";
 import { EventContext, type EventContextValue } from "../event/eventContext";
 import { SessionContext, type SessionValue } from "../session/sessionContext";
-import type { Approval, AuditEvent, CommandCenterData, Event } from "../types";
+import type { Approval, AuditEvent, CommandCenterData, Event, EventHealth, OperationsBrief } from "../types";
 import { CommandCenter } from "./CommandCenter";
 
 const api = vi.hoisted(() => ({
@@ -37,6 +37,8 @@ const api = vi.hoisted(() => ({
   getApprovals: vi.fn(),
   getAuditLog: vi.fn(),
   getAttention: vi.fn(),
+  getEventHealth: vi.fn(),
+  getBrief: vi.fn(),
   decideApproval: vi.fn(),
 }));
 
@@ -47,7 +49,10 @@ vi.mock("../api", () => ({
   getApprovals: api.getApprovals,
   getAuditLog: api.getAuditLog,
   getAttention: api.getAttention,
+  getEventHealth: api.getEventHealth,
+  getBrief: api.getBrief,
   decideApproval: api.decideApproval,
+  humanize: (value: string) => value.charAt(0) + value.slice(1).toLowerCase(),
   isMockMode: false,
 }));
 
@@ -225,19 +230,69 @@ const EVENT_AUDIT: AuditEvent[] = [
   },
 ];
 
+const EVENT_HEALTH: EventHealth = {
+  event_id: ACTIVE_EVENT.event_id,
+  event_name: ACTIVE_EVENT.name,
+  health_band: "YELLOW",
+  health_score: 78,
+  health_reasons: ["One decision needs review."],
+  health_signals: [{ signal: "pending_approvals", points: 8, detail: "One decision needs review." }],
+  health_summary: "The event is stable, with one decision needing review.",
+  computed_at: "2026-10-02T10:00:00Z",
+  inputs: {
+    overdue_tasks: 2,
+    blocked_tasks: 1,
+    open_incidents: 1,
+    silent_speakers: 0,
+    stale_approvals: 1,
+    budget_utilization_percent: 25,
+    hours_until_start: 48,
+    attendee_data_completeness_percent: 90,
+  },
+};
+
+const EVENT_BRIEF: OperationsBrief = {
+  event_id: ACTIVE_EVENT.event_id,
+  event_name: ACTIVE_EVENT.name,
+  generated_at: "2026-10-02T10:00:00Z",
+  health_band: "YELLOW",
+  health_score: 78,
+  health_reasons: EVENT_HEALTH.health_reasons,
+  decisions_required: 1,
+  high_risk_items: 2,
+  tasks_progressing: 6,
+  overdue_tasks: 2,
+  blocked_tasks: 1,
+  open_incidents: 1,
+  incidents_needing_attention: 1,
+  budget: {
+    total_inr: 100000,
+    remaining_inr: 75000,
+    remaining_formatted: "75,000",
+    committed_inr: 10000,
+    spent_inr: 15000,
+    utilization_percent: 25,
+    pending_exposure_inr: 5000,
+  },
+  speakers: { total: 4, confirmed: 3, pending: 1, unresponsive: 0, needing_accommodation: 1 },
+  attention_items: [],
+  recommended_priority: ["Decide: Venue deposit", "Unblock: Registration desk", "Review budget: catering"],
+  hours_until_start: 48,
+};
+
 /* --- Harness -------------------------------------------------------------- */
 
 const setActiveEvent = vi.fn<(eventId: string) => boolean>();
 const signOut = vi.fn();
 
-function renderCommandCenter(): void {
+function commandCenterTree(activeEvent: Event = ACTIVE_EVENT, role: "LEADER" | "TEAM_MEMBER" = "LEADER") {
   const session: SessionValue = {
     status: "authenticated",
     user: {
       userId: "user-1",
       email: "priya@example.org",
       name: "Priya Sharma",
-      role: "LEADER",
+      role,
       organizations: ["ORG-wemakedev"],
       isDemo: false,
     },
@@ -248,24 +303,28 @@ function renderCommandCenter(): void {
 
   const events: EventContextValue = {
     status: "ready",
-    activeEvent: ACTIVE_EVENT,
-    activeEventId: ACTIVE_EVENT.event_id,
-    events: [ACTIVE_EVENT],
+    activeEvent,
+    activeEventId: activeEvent.event_id,
+    events: activeEvent.event_id === ACTIVE_EVENT.event_id ? [ACTIVE_EVENT] : [ACTIVE_EVENT, activeEvent],
     source: "active",
     error: null,
     setActiveEvent,
     refresh: () => undefined,
   };
 
-  render(
+  return (
     <MemoryRouter>
       <SessionContext.Provider value={session}>
         <EventContext.Provider value={events}>
           <CommandCenter />
         </EventContext.Provider>
       </SessionContext.Provider>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+}
+
+function renderCommandCenter(activeEvent: Event = ACTIVE_EVENT, role: "LEADER" | "TEAM_MEMBER" = "LEADER") {
+  return render(commandCenterTree(activeEvent, role));
 }
 
 beforeEach(() => {
@@ -274,6 +333,8 @@ beforeEach(() => {
   api.getApprovals.mockResolvedValue({ approvals: [NEWER, OLDEST], count: 2 });
   api.getAuditLog.mockResolvedValue({ audit_events: EVENT_AUDIT, count: EVENT_AUDIT.length });
   api.getAttention.mockResolvedValue({ event_id: ACTIVE_EVENT.event_id, attention_items: [], count: 0, critical_count: 0, high_count: 0 });
+  api.getEventHealth.mockResolvedValue(EVENT_HEALTH);
+  api.getBrief.mockResolvedValue(EVENT_BRIEF);
   api.decideApproval.mockResolvedValue({});
 });
 
@@ -386,6 +447,60 @@ describe("the resolved page (requirements 4.1, 4.2, 4.3, 4.4, 4.6, 4.7)", () => 
     expect(setActiveEvent).toHaveBeenCalledWith("EVT-summit");
   });
 
+  it("renders the active event's deterministic operational state without recomputing it", async () => {
+    renderCommandCenter();
+
+    const region = await screen.findByRole("region", { name: "Current operational state" });
+
+    expect(api.getEventHealth).toHaveBeenCalledWith(ACTIVE_EVENT.event_id);
+    expect(api.getBrief).toHaveBeenCalledWith(ACTIVE_EVENT.event_id);
+    expect(within(region).getByText("Yellow.")).toBeInTheDocument();
+    expect(within(region).getByText(EVENT_HEALTH.health_summary, { exact: false })).toBeInTheDocument();
+    expect(within(region).getByText(/progressing 6 tasks/i)).toBeInTheDocument();
+    expect(within(region).getByText(/1 decision and 2 high-risk items need review/i)).toBeInTheDocument();
+    expect(within(region).getByText("Decide: Venue deposit")).toBeInTheDocument();
+    expect(within(region).getByText("Unblock: Registration desk")).toBeInTheDocument();
+    expect(within(region).getByText("Review budget: catering")).toBeInTheDocument();
+  });
+
+  it("clears health, brief, and attention immediately when the active event changes", async () => {
+    const oldAttention = {
+      kind: "TASK" as const,
+      severity: "HIGH" as const,
+      title: "Unblock the old event task",
+      detail: "Waiting on venue access",
+      resource_type: "Task",
+      resource_id: "TSK-old",
+    };
+    api.getAttention.mockResolvedValueOnce({
+      event_id: ACTIVE_EVENT.event_id,
+      attention_items: [oldAttention],
+      count: 1,
+      critical_count: 0,
+      high_count: 1,
+    });
+    const view = renderCommandCenter();
+
+    expect(await screen.findByText(EVENT_HEALTH.health_summary, { exact: false })).toBeInTheDocument();
+    expect(await screen.findByText(oldAttention.title)).toBeInTheDocument();
+
+    const nextEvent: Event = { ...ACTIVE_EVENT, event_id: "EVT-next", name: "Next Event" };
+    api.getEventHealth.mockReturnValue(new Promise(() => undefined));
+    api.getBrief.mockReturnValue(new Promise(() => undefined));
+    api.getAttention.mockReturnValue(new Promise(() => undefined));
+
+    view.rerender(commandCenterTree(nextEvent));
+
+    expect(screen.queryByText(EVENT_HEALTH.health_summary, { exact: false })).not.toBeInTheDocument();
+    expect(screen.queryByText(oldAttention.title)).not.toBeInTheDocument();
+    expect(screen.getByText("Getting the current operational state…")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(api.getEventHealth).toHaveBeenLastCalledWith(nextEvent.event_id);
+      expect(api.getBrief).toHaveBeenLastCalledWith(nextEvent.event_id);
+      expect(api.getAttention).toHaveBeenLastCalledWith(nextEvent.event_id);
+    });
+  });
+
   it("builds the handled strip from the active event's audit, agent actors only", async () => {
     renderCommandCenter();
 
@@ -444,6 +559,23 @@ describe("failures (requirements 13.3, 13.8)", () => {
       await screen.findByRole("heading", { level: 1, name: "Hello, Priya Sharma" }),
     ).toBeInTheDocument();
     expect(api.getCommandCenter).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps operational-state failure and retry inside that region", async () => {
+    const user = userEvent.setup();
+    api.getEventHealth.mockRejectedValueOnce({ status: 500, category: "INTERNAL_ERROR" });
+
+    renderCommandCenter();
+
+    const region = await screen.findByRole("region", { name: "Current operational state" });
+    expect(within(region).getByText("CommunityOps couldn't load this view.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+
+    await user.click(within(region).getByRole("button", { name: "Try again" }));
+
+    expect(await within(region).findByText(EVENT_HEALTH.health_summary, { exact: false })).toBeInTheDocument();
+    expect(api.getEventHealth).toHaveBeenCalledTimes(2);
+    expect(api.getBrief).toHaveBeenCalledTimes(2);
   });
 
   it("keeps a failed handled strip inside the strip", async () => {
