@@ -1,5 +1,3 @@
-update following README.md as it is:# CommunityOps
-
 ## Problem
 
 Community leaders running AWS and other community events continuously coordinate speakers, volunteers and teams, attendees, check-in, incidents, approvals, follow-ups, operational tasks, audit history, and event-day exceptions.
