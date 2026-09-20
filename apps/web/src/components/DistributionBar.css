@@ -1,0 +1,111 @@
+/* ============================================================================
+ * DistributionBar — the one treatment for the one contextual visual a page is
+ * allowed (requirement 12.10, design.md §15.4).
+ *
+ * Imported by `DistributionBar.tsx` only. Every value is a token from
+ * `src/styles/tokens.css`: no hex colour, no raw pixel size (design.md §6.3).
+ *
+ * This file owns the chrome — the frame, the heading baseline, the bar's height
+ * and boundary, the legend rhythm, the swatch box, the sentence. A page owns
+ * only the fills, keyed off `data-segment`, because the vocabulary of segments
+ * is the page's (task states, speaker groups, incident severities) while the
+ * treatment is the product's. Before this file existed there were three bars at
+ * two heights with two different boundaries; §15.4 asks for one.
+ *
+ * Page fill rules are written as `.<page-root> .distribution__segment[data-segment="…"]`,
+ * which outranks the neutral defaults here on specificity alone, so neither the
+ * CSS import order nor one page's vocabulary can reach another's bar.
+ *
+ * Contrast, from the pairings verified in `tokens.css`:
+ *   --text-primary   on --bg-surface 15.52
+ *   --text-secondary on --bg-surface  7.87
+ *   --border-strong  on --bg-surface  3.52  (non-text boundary, 3:1)
+ * ==========================================================================*/
+
+/* The frame is `.card`'s, applied alongside this class in the component, so the
+   visual sits in the same surface, border, radius and padding as every other
+   card in the product (requirement 12.4). Only the rhythm below it is set here:
+   the page root's own gap carries the space after it. */
+.distribution {
+  margin-bottom: 0;
+}
+
+/* Section-title baseline, shared with `.page-section__heading` and `.card-title`
+   (design.md §15.1). */
+.distribution__heading {
+  font-size: var(--fs-card-title);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-3);
+}
+
+/* One height (`--sp-3`) and one boundary (`--border-strong`, the token that
+   clears 3:1 against the surface) for every distribution bar in the product.
+   `overflow: hidden` keeps the end segments inside the pill.
+
+   No transition or animation is declared, so `prefers-reduced-motion` has
+   nothing to suppress here beyond the global block in `index.css`. */
+.distribution__bar {
+  display: block;
+  width: 100%;
+  height: var(--sp-3);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--bg-subtle);
+}
+
+/* The neutral default. A page raises specificity to tint a segment; a segment a
+   page has no rule for stays neutral rather than disappearing. */
+.distribution__segment {
+  fill: var(--bg-subtle);
+}
+
+.distribution__legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin-top: var(--sp-3);
+}
+
+.distribution__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+.distribution__legend-label {
+  /* The segment's own word. Carried by text, never by the swatch beside it
+     (requirement 15.10). */
+  color: var(--text-secondary);
+}
+
+.distribution__legend-count {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The swatch repeats the bar's fill so the legend is readable against it. It is
+   `aria-hidden`: the label beside it is what names the segment. */
+.distribution__swatch {
+  display: inline-block;
+  width: var(--sp-3);
+  height: var(--sp-3);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--bg-subtle);
+}
+
+/* Requirement 15.12's text alternative: the whole visual in one sentence. */
+.distribution__sentence {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+  line-height: var(--lh-body);
+}

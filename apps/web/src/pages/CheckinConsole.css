@@ -1,0 +1,334 @@
+/* ============================================================================
+ * Check-In — page-scoped rules (design.md §8.6).
+ *
+ * Every value is a token from `src/styles/tokens.css`. No hex colour, no raw
+ * pixel size, no inline style in the page (requirements 12.1, 12.2).
+ *
+ * Card modifiers are two-class selectors (`.card.checkin-card`) on purpose:
+ * `src/main.tsx` imports `App` before `index.css`, so the shared `.card` rule is
+ * emitted after this file and would otherwise win at equal specificity.
+ *
+ * This page is used on a phone at a venue desk, so the responsive block at the
+ * end is not a nicety: below `--bp-md` every control is at least `--touch-min`
+ * and the field row stacks to full width (requirements 14.6, 9.1).
+ *
+ * Status colour is `StatusBadge`'s alone (requirement 12.5). The two coloured
+ * rules below carry an *outcome* — a completed check-in, an unresolved case —
+ * and each is stated in words beside the rule (requirements 12.9, 15.10).
+ *
+ * Contrast, from the pairings verified in `tokens.css` (WCAG AA, 4.5:1):
+ *   --text-secondary on --bg-surface 7.87
+ *   --text-muted     on --bg-surface 5.74
+ *   --brand          on --bg-surface 6.43
+ *   --brand-strong   on --bg-surface 8.72
+ *   --attention      on --bg-surface 5.05
+ * ==========================================================================*/
+
+/* One column, at the product's one section rhythm. Both come from the shared
+   `.page` class applied alongside `.checkin` in the page (requirement 12.4): the
+   flow is a sequence, not a dashboard, and its spacing is not this screen's to
+   choose. */
+
+/* --------------------------------------------------------------------------
+ * The four-step stepper — the page's one contextual visual
+ * ------------------------------------------------------------------------*/
+
+.checkin-stepper__list {
+  display: flex;
+  list-style: none;
+  gap: var(--sp-1);
+}
+
+.checkin-stepper__step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-support);
+  color: var(--text-muted);
+  border-bottom: var(--sp-1) solid var(--border);
+}
+
+.checkin-stepper__position {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--sp-6);
+  height: var(--sp-6);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+}
+
+/* Weight and the marker, not only colour, mark a step's state (requirement 15.10),
+   and `.checkin-stepper__alt` states the same progress in words. */
+.checkin-stepper__step[data-state="current"] {
+  color: var(--brand-strong);
+  border-bottom-color: var(--brand);
+  font-weight: var(--fw-semibold);
+}
+
+.checkin-stepper__step[data-state="current"] .checkin-stepper__position {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--text-inverse);
+}
+
+.checkin-stepper__step[data-state="done"] {
+  color: var(--text-secondary);
+  border-bottom-color: var(--brand-strong);
+}
+
+.checkin-stepper__step[data-state="done"] .checkin-stepper__position {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.checkin-stepper__alt {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+/* The announcement region. Visible as well as announced: the volunteer holding
+   the phone is the person who needs the result most. */
+.checkin__announcement:not(:empty) {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+/* --------------------------------------------------------------------------
+ * Cards and headings
+ * ------------------------------------------------------------------------*/
+
+.checkin-card__heading {
+  font-size: var(--fs-section);
+  margin-bottom: var(--sp-3);
+}
+
+.checkin-subheading {
+  font-size: var(--fs-card-title);
+  margin-bottom: var(--sp-2);
+}
+
+.checkin-note {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-3);
+}
+
+/* --------------------------------------------------------------------------
+ * The one search field, and the transaction-reference field
+ * ------------------------------------------------------------------------*/
+
+.checkin-search {
+  margin-bottom: var(--sp-4);
+}
+
+/* The label's type, weight and tone are the shared `.form-label`'s, applied
+   alongside these classes in the page, so a control on this screen is named the
+   same way a control in a drawer form is. This screen used to give its labels the
+   uppercase letter-spaced treatment that belongs to table headers and metric
+   labels — things that name a column or a number, not a control. Only the block
+   layout below the label is this screen's, because these fields are not wrapped
+   in a `.form-field` stack. */
+.checkin-field__label {
+  display: block;
+  margin-bottom: var(--sp-1);
+}
+
+.checkin-field__hint {
+  margin-bottom: var(--sp-2);
+}
+
+.checkin-field__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.checkin-field__input {
+  flex: 1 1 auto;
+  /* Below this the field stacks instead of squeezing the button off the row. */
+  min-width: calc(var(--sp-16) * 3);
+}
+
+.checkin-field__submit {
+  flex: 0 0 auto;
+}
+
+.checkin-search__lookup {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+ * Masked candidates and the reconciliation branch
+ * ------------------------------------------------------------------------*/
+
+.checkin-candidates,
+.checkin-reconcile {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: var(--border-w) solid var(--border);
+}
+
+/* The candidate list rendered inside a shared error state, where a table would
+   be too heavy a surface for a sentence's worth of context. */
+.checkin-candidates__fallback {
+  list-style: none;
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+.checkin-candidates__fallback li + li {
+  margin-top: var(--sp-1);
+}
+
+/* An unresolved recovery case. Stated in words above the rule. */
+.checkin-case {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3);
+  border-left: var(--sp-1) solid var(--attention);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.checkin-case__title {
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--sp-1);
+}
+
+/* --------------------------------------------------------------------------
+ * The attendee and the seven checks
+ * ------------------------------------------------------------------------*/
+
+.checkin-attendee__name {
+  font-size: var(--fs-section);
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--sp-1);
+}
+
+.checkin-attendee__meta {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-4);
+}
+
+.checkin-checks {
+  list-style: none;
+}
+
+.checkin-check {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-1) var(--sp-3);
+  align-items: center;
+  padding: var(--sp-3) 0;
+  border-top: var(--border-w) solid var(--border);
+}
+
+.checkin-check__label {
+  font-weight: var(--fw-medium);
+}
+
+/* A check the verify response carried no result for. Neutral on purpose: the
+   page has no verdict for it and does not imply one. */
+.checkin-check__unknown {
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
+
+.checkin-check__message {
+  grid-column: 1 / -1;
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+.checkin-verdict {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: var(--border-w) solid var(--border);
+  font-weight: var(--fw-medium);
+}
+
+.checkin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+.checkin-ticket {
+  margin-top: var(--sp-2);
+}
+
+.checkin-ticket__outcome {
+  font-weight: var(--fw-medium);
+  margin-bottom: var(--sp-1);
+}
+
+/* --------------------------------------------------------------------------
+ * Completion
+ * ------------------------------------------------------------------------*/
+
+/* Two classes, so the left rule outranks `.card`'s four-sided `border`, which
+   `index.css` emits after this file. Same technique as `.card.decision-card`. */
+.card.checkin-complete {
+  border-left: var(--sp-1) solid var(--brand);
+}
+
+.checkin-complete__title {
+  font-size: var(--fs-section);
+  color: var(--brand-strong);
+  margin-bottom: var(--sp-2);
+}
+
+.checkin-complete__line {
+  margin-bottom: var(--sp-1);
+}
+
+/* --------------------------------------------------------------------------
+ * Phone at a venue desk (requirements 14.6, 14.7)
+ *
+ * The literal below repeats `--bp-md`: a media query cannot read a custom
+ * property, and it is the one documented exception in this codebase.
+ * ------------------------------------------------------------------------*/
+
+@media (max-width: 899px) {
+  .checkin .btn,
+  .checkin .input {
+    min-height: var(--touch-min);
+  }
+
+  .checkin-field__input,
+  .checkin-field__submit {
+    /* Stacked and full width: a thumb, not a cursor. */
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .checkin-stepper__list {
+    flex-wrap: wrap;
+  }
+
+  .checkin-stepper__step {
+    /* Two rows of two rather than four columns squeezed to nothing. */
+    flex: 1 1 40%;
+  }
+
+  .checkin-check {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+}

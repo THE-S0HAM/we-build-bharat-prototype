@@ -1,312 +1,230 @@
-/**
- * Agent console.
- *
- * The full-height conversation, plus the two things that make it trustworthy rather than
- * impressive: what the agent is allowed to do, and what it has actually done.
- *
- * The capability panel is read from `GET /agent/capabilities`, which projects the live tool
- * registry filtered by this caller's role. It is not a hand-written list of features — if a
- * tool is added, withdrawn, or moved behind approval, this screen changes with it. That
- * matters because a capability list maintained separately from the runtime eventually lies.
- *
- * The activity feed is read from the audit log, not from a separate agent-activity store, so
- * the agent's account of itself is the same record its refusals land in.
- *
- * Fun Mode is a tone flag passed to the model. It never changes what the agent may do, and the
- * backend prompt forbids it around money, approvals, incidents and outbound text. Said plainly
- * on screen so nobody wonders whether a personality setting is also a permissions setting.
- */
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { agentChat, getAgentActivity, getAgentCapabilities } from "../api";
+import { ApiErrorState } from "../components/ApiErrorState";
+import { EmptyState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
+import { SkeletonCard } from "../components/Skeleton";
+import type { EventScopedPageProps } from "../event/EventScopedView";
+import { APPROVALS_PATH } from "../navConfig";
+import { useApiFailure } from "../session/useApiFailure";
+import type { AgentActivityResponse, AgentCapabilities, AgentEvidence } from "../types";
+import "./OperationalPages.css";
 
-import { useCallback, useEffect, useState } from "react";
+interface Turn {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  evidence: AgentEvidence[];
+  approvalCount: number;
+  failed?: boolean;
+}
 
-import { ApiError, formatRelative, getAgentActivity, getAgentCapabilities, humanize } from "../api";
-import { AgentChat } from "../components/AgentChat";
-import {
-  Card,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  Notice,
-  PageHeader,
-  Section,
-  Stat,
-  StatusBadge,
-  Tabs,
-} from "../components/primitives";
-import type { AgentActivityResponse, AgentCapabilities, Role } from "../types";
+function actionLabel(identifier: string): string {
+  const words = identifier.replace(/_/g, " ").trim().toLowerCase();
+  return words === "" ? "Operational action" : words.charAt(0).toUpperCase() + words.slice(1);
+}
 
-type Panel = "capabilities" | "activity";
+function reviewedSummary(summary: string): string {
+  return summary
+    .replace(/\bAPR-[A-Za-z0-9-]+\b/g, "an approval request")
+    .replace(/\b[a-z]+(?:_[a-z0-9]+)+\b/g, (value) => value.replace(/_/g, " "));
+}
 
-export function AgentConsole({
-  eventId,
-  role,
-  funMode,
-  onToggleFunMode,
-}: {
-  eventId: string;
-  role: Role;
-  funMode: boolean;
-  onToggleFunMode: () => void;
-}) {
+export function AgentConsole({ eventId }: EventScopedPageProps) {
+  const report = useApiFailure();
   const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
   const [activity, setActivity] = useState<AgentActivityResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | undefined>();
-  const [panel, setPanel] = useState<Panel>("capabilities");
+  const [failure, setFailure] = useState<unknown>(null);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sessionId, setSessionId] = useState<string>();
+  const [sending, setSending] = useState(false);
+  const inputId = useId();
+  const sequence = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     setLoading(true);
-    setError(undefined);
-    try {
-      const [caps, acts] = await Promise.all([
-        getAgentCapabilities(),
-        // Activity is supporting context; an empty feed is better than blanking the console.
-        getAgentActivity(eventId).catch(() => null),
-      ]);
-      setCapabilities(caps);
-      setActivity(acts);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load the agent console.");
-    } finally {
-      setLoading(false);
-    }
-  }, [eventId]);
+    setFailure(null);
+    Promise.all([getAgentCapabilities(), getAgentActivity(eventId)]).then(
+      ([caps, acts]) => {
+        setCapabilities(caps);
+        setActivity(acts);
+        setLoading(false);
+      },
+      (error: unknown) => {
+        setFailure(report(error));
+        setLoading(false);
+      },
+    );
+  }, [eventId, report]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(load, [load]);
 
-  if (loading) return <LoadingState label="Reading what the agent is allowed to do…" />;
-  if (error) return <ErrorState message={error} onRetry={() => void load()} />;
-
-  const approvalGated = capabilities?.requires_approval ?? [];
-  const automatic = capabilities?.automatic ?? [];
+  function send(event: FormEvent): void {
+    event.preventDefault();
+    const message = draft.trim();
+    if (!message || sending) return;
+    const userId = sequence.current++;
+    setTurns((current) => [
+      ...current,
+      { id: userId, role: "user", content: message, evidence: [], approvalCount: 0 },
+    ]);
+    setDraft("");
+    setSending(true);
+    agentChat({ message, event_id: eventId, session_id: sessionId }).then(
+      (response) => {
+        setSessionId(response.session_id);
+        setTurns((current) => [
+          ...current,
+          {
+            id: sequence.current++,
+            role: "assistant",
+            content: reviewedSummary(response.reply),
+            evidence: response.evidence,
+            approvalCount: response.approvals_created.length,
+          },
+        ]);
+        setSending(false);
+        if (response.approvals_created.length > 0) load();
+      },
+      (error: unknown) => {
+        report(error);
+        setTurns((current) => [
+          ...current,
+          {
+            id: sequence.current++,
+            role: "assistant",
+            content:
+              "CommunityOps could not answer that request. Your operational data was not changed.",
+            evidence: [],
+            approvalCount: 0,
+            failed: true,
+          },
+        ]);
+        setSending(false);
+      },
+    );
+  }
 
   return (
-    <div>
+    <div className="page agent-console">
       <PageHeader
-        title="Ask CommunityOps"
-        subtitle="Every answer comes from a live lookup against your operational data. Consequential actions are prepared for a decision, never performed."
-        actions={
-          <button
-            className={funMode ? "btn btn-primary btn-sm" : "btn btn-sm"}
-            type="button"
-            onClick={onToggleFunMode}
-            aria-pressed={funMode}
-          >
-            Fun mode {funMode ? "on" : "off"}
-          </button>
-        }
+        title="Agent"
+        context="Ask CommunityOps about the current operation. Evidence and approval gates stay visible with every answer."
       />
-
-      {funMode && (
-        <div style={{ marginBottom: "var(--s5)" }}>
-          <Notice tone="info">
-            Fun mode changes the agent&rsquo;s tone only. It stays plain and professional around
-            money, approvals, incidents and anything sent outside your organization, and it changes
-            nothing about what the agent is permitted to do.
-          </Notice>
-        </div>
-      )}
-
-      <div className="split">
-        <Card padding="flush">
-          <AgentChat
-            eventId={eventId}
-            role={role}
-            funMode={funMode}
-            onApprovalCreated={() => void load()}
-          />
-        </Card>
-
-        <div className="stack">
-          <Card title="What it can do">
-            <Tabs<Panel>
-              tabs={[
-                { id: "capabilities", label: "Boundaries" },
-                { id: "activity", label: "Recent", count: activity?.count ?? 0 },
-              ]}
-              active={panel}
-              onChange={setPanel}
-            />
-
-            {panel === "capabilities" ? (
-              <div className="stack">
-                <div className="stat-grid">
-                  <Stat
-                    value={automatic.length}
-                    label="Runs on its own"
-                    note="reads and low-risk work"
-                    tone="handled"
-                  />
-                  <Stat
-                    value={approvalGated.length}
-                    label="Needs your approval"
-                    note="financial and irreversible"
-                    tone="needs-decision"
-                  />
-                </div>
-
-                {capabilities && capabilities.withheld_from_role.length > 0 && (
-                  <Notice tone="info">
-                    {capabilities.withheld_from_role.length} capabilities are withheld from your
-                    role entirely. {role === "TEAM_MEMBER"
-                      ? "Decisions about budget, approvals and team structure are reserved for community leaders."
-                      : "These are actions no role may take."}
-                  </Notice>
-                )}
-
-                <div>
-                  <div className="t-label" style={{ marginBottom: "var(--s2)" }}>
-                    Prepared for your decision
-                  </div>
-                  {approvalGated.length === 0 ? (
-                    <p className="t-meta">
-                      No approval-gated capabilities are available to your role.
-                    </p>
-                  ) : (
-                    <div className="cluster">
-                      {approvalGated.map((name) => (
-                        <span className="chat-tool" key={name}>
-                          {name}
-                        </span>
-                      ))}
+      {loading && <SkeletonCard lines={5} label="Reading agent capabilities and activity…" />}
+      {failure !== null && <ApiErrorState error={failure} onRetry={load} />}
+      {!loading && failure === null && capabilities !== null && (
+        <>
+          <section className="card ops-chat" aria-labelledby="agent-conversation">
+            <h2 className="page-section__heading" id="agent-conversation">
+              Operational conversation
+            </h2>
+            <div
+              className="ops-chat__log"
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions text"
+              aria-label="Conversation"
+              aria-busy={sending}
+            >
+              {turns.length === 0 && (
+                <EmptyState
+                  title="What do you need to know?"
+                  description="Ask about current tasks, incidents, speakers, attendees or budget. CommunityOps uses only the capabilities available to your role."
+                />
+              )}
+              {turns.map((turn) => (
+                <div
+                  key={turn.id}
+                  className={turn.role === "user" ? "ops-chat__turn ops-chat__turn--user" : "ops-chat__turn"}
+                >
+                  <strong>{turn.role === "assistant" ? "CommunityOps" : "You"}</strong>
+                  <p>{turn.content}</p>
+                  {turn.approvalCount > 0 && (
+                    <div className="ops-result ops-result--attention">
+                      <strong>Prepared, not performed.</strong>
+                      <p>
+                        This action is waiting for a human decision.{" "}
+                        <Link to={APPROVALS_PATH}>Review the prepared action in Approvals</Link>.
+                      </p>
                     </div>
                   )}
+                  {turn.evidence.length > 0 && (
+                    <>
+                      <p className="ops-list__meta">Evidence from verified operations</p>
+                      <ul className="ops-evidence">
+                        {turn.evidence.map((entry, index) => (
+                          <li key={`${entry.tool}-${index}`}>
+                            <strong>{actionLabel(entry.tool)}</strong>: {reviewedSummary(entry.summary)}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {turn.failed && (
+                    <p className="ops-list__meta">You can retry by sending the question again.</p>
+                  )}
                 </div>
-
-                <div>
-                  <div className="t-label" style={{ marginBottom: "var(--s2)" }}>
-                    Done without asking
-                  </div>
-                  <div className="cluster">
-                    {automatic.map((name) => (
-                      <span className="chat-tool" key={name}>
-                        {name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {capabilities && (
-                  <ul className="stack-sm" style={{ paddingLeft: "var(--s5)" }}>
-                    {capabilities.notes.map((note) => (
-                      <li className="t-meta" key={note}>
-                        {note}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : (
-              <ActivityPanel activity={activity} />
-            )}
-          </Card>
-        </div>
-      </div>
-
-      {capabilities && (
-        <Section title="Every capability">
-          <Card
-            padding="flush"
-            footer={
-              <span className="t-meta">
-                {capabilities.tool_count} capabilities available to your role, read from the live
-                registry. Approval-gated ones create a request and stop.
-              </span>
-            }
-          >
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Capability</th>
-                    <th>What it does</th>
-                    <th>Risk</th>
-                    <th>Gate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {capabilities.tools.map((tool) => (
-                    <tr key={tool.name}>
-                      <td className="t-mono">{tool.name}</td>
-                      <td style={{ maxWidth: 420 }}>{tool.description}</td>
-                      <td>
-                        <StatusBadge status={tool.risk_tier} />
-                      </td>
-                      <td>
-                        {tool.requires_approval ? (
-                          <StatusBadge tone="needs-decision" label="Needs approval" />
-                        ) : tool.mutating ? (
-                          <StatusBadge tone="info" label="Writes" />
-                        ) : (
-                          <StatusBadge tone="handled" label="Read only" />
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              ))}
+              {sending && <p role="status">CommunityOps is checking the operation…</p>}
             </div>
-          </Card>
-        </Section>
+            <form className="ops-compose" onSubmit={send}>
+              <div className="form-field">
+                <label className="form-label" htmlFor={inputId}>Ask CommunityOps</label>
+                <textarea className="input" id={inputId} rows={3} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={sending} />
+              </div>
+              <button type="submit" className="btn btn-primary" disabled={sending || !draft.trim()}>Ask</button>
+            </form>
+          </section>
+          <section className="page-section" aria-labelledby="agent-boundaries">
+            <h2 className="page-section__heading" id="agent-boundaries">Capability boundaries</h2>
+            <p className="page-section__description">
+              {capabilities.tool_count} capabilities are available to this {capabilities.role === "LEADER" ? "leader" : "team member"} session. The backend filters this list and enforces every call.
+            </p>
+            <div className="ops-capabilities">
+              <CapabilityList title="Automatic" items={capabilities.automatic} empty="No automatic capabilities were returned." />
+              <CapabilityList title="Requires approval" items={capabilities.requires_approval} empty="No approval-gated capabilities were returned." />
+              <CapabilityList title="Withheld from this role" items={capabilities.withheld_from_role} empty="Nothing else is withheld from this role." />
+            </div>
+          </section>
+          <section className="page-section" aria-labelledby="agent-activity">
+            <h2 className="page-section__heading" id="agent-activity">Recent verified activity</h2>
+            {activity === null || activity.activity.length === 0 ? (
+              <EmptyState title="No agent activity yet." description="Actions and refusals appear here from the audit record." />
+            ) : (
+              <ul className="ops-list">
+                {activity.activity.map((entry) => (
+                  <li className="ops-list__item" key={entry.audit_id}>
+                    <p className="ops-list__title">{reviewedSummary(entry.summary)}</p>
+                    <p className="ops-list__meta">
+                      {entry.timestamp}
+                      {entry.tool_used ? ` · ${actionLabel(entry.tool_used)}` : ""}
+                      {entry.approval_id ? " · Prepared action awaiting review" : ""}
+                    </p>
+                    {entry.approval_id ? <Link to={APPROVALS_PATH}>Review in Approvals</Link> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
       )}
     </div>
   );
 }
 
-/**
- * What the agent has done recently.
- *
- * Refusals are counted and shown first. An agent that has never refused anything is either
- * doing nothing consequential or is not being constrained, and the reader deserves to tell
- * which.
- */
-function ActivityPanel({ activity }: { activity: AgentActivityResponse | null }) {
-  if (!activity || activity.count === 0) {
-    return (
-      <EmptyState
-        mark="—"
-        title="Nothing yet"
-        body="Actions CommunityOps takes on this event will appear here, read straight from the audit log."
-      />
-    );
-  }
-
+function CapabilityList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
   return (
-    <div className="stack">
-      {(activity.refused_count > 0 || activity.awaiting_approval_count > 0) && (
-        <div className="cluster">
-          {activity.awaiting_approval_count > 0 && (
-            <StatusBadge
-              tone="needs-decision"
-              label={`${activity.awaiting_approval_count} awaiting approval`}
-            />
-          )}
-          {activity.refused_count > 0 && (
-            <StatusBadge tone="blocked" label={`${activity.refused_count} refused`} />
-          )}
-        </div>
+    <div className="card">
+      <h3 className="drawer-heading">{title}</h3>
+      {items.length ? (
+        <ul className="ops-list">{items.map((item) => <li key={item}>{actionLabel(item)}</li>)}</ul>
+      ) : (
+        <p className="ops-list__meta">{empty}</p>
       )}
-
-      <ul className="timeline">
-        {activity.activity.slice(0, 12).map((entry) => (
-          <li className="timeline-item" key={entry.audit_id}>
-            <span className="timeline-time">{formatRelative(entry.timestamp)}</span>
-            <span
-              className={`timeline-marker ${entry.outcome === "failure" ? "failure" : "agent"}`}
-              aria-hidden="true"
-            />
-            <div className="timeline-main">
-              <div className="t-body">{entry.summary || humanize(entry.action)}</div>
-              <div className="t-meta" style={{ marginTop: 2 }}>
-                {entry.tool_used ? `${entry.tool_used} · ` : ""}
-                {entry.resource_type} <span className="t-mono">{entry.resource_id}</span>
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

@@ -1,0 +1,112 @@
+/* ============================================================================
+ * Topbar — the one global-context strip (requirement 3.11, design.md §7).
+ *
+ * The frame is not defined here. `AppShell` owns the sticky `<header>`, the
+ * `--header-h` minimum height, the `--z-sticky` layer and the inner wrapper
+ * capped at `--content-max`, so this file only lays out the strip's contents.
+ *
+ * Every value comes from `src/styles/tokens.css`. The only literal number is
+ * the `--bp-sm` breakpoint, because CSS media queries cannot read custom
+ * properties. The global `:focus-visible` ring in `index.css` covers the
+ * sign-out control and is deliberately not restated.
+ * ==========================================================================*/
+
+.topbar {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-4);
+  /* Wrapping grows the header rather than pushing the page sideways, which is
+     what keeps narrow widths free of horizontal scroll (requirement 14.7). */
+  flex-wrap: wrap;
+  /* Flex items default to `min-width: auto`, which would let a long event name
+     widen the row instead of shrinking inside it. */
+  min-width: 0;
+}
+
+/* --- Context group ---------------------------------------------------------
+ * Which workspace and which event you are acting for: the event switcher and,
+ * during a demo session, the "Demo workspace" chip. Both arrive as slots, so
+ * this group styles position only, never their internals. */
+.topbar__context {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+/* --- Session group --------------------------------------------------------
+ * Environment and session state, held to the trailing edge. `margin-inline-start:
+ * auto` rather than a spacer, so the group sits right whether or not the context
+ * group rendered. */
+.topbar__session {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* --- Demo Mode badge ------------------------------------------------------
+ * `VITE_USE_MOCK` is active: the data on screen is fabricated. That is a
+ * warning about the build, so it takes the attention treatment — and it must
+ * stay visually unlike the neutral "Demo workspace" chip in the context group,
+ * which reports a real session against real API responses (requirement 2.8,
+ * design.md A18).
+ *
+ * Both text colours use `--attention` on `--attention-soft`, the pairing
+ * verified in `tokens.css`. No transition, so there is nothing for
+ * `prefers-reduced-motion` to suppress. */
+.topbar__mock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--sp-3);
+  border: var(--border-w) solid var(--attention);
+  border-radius: var(--radius-pill);
+  background: var(--attention-soft);
+  color: var(--attention);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}
+
+.topbar__mock-badge-name {
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-label);
+}
+
+/* Lighter weight, same colour: the qualifier reads as supporting text without
+   dropping below the verified contrast pairing. */
+.topbar__mock-badge-detail {
+  font-weight: var(--fw-regular);
+}
+
+.topbar__signout {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* --- Below --bp-sm (640px) ------------------------------------------------
+ * The badge keeps its label and its treatment; only the spelled-out qualifier
+ * drops, and the accessible name still carries it in full. */
+@media (max-width: 639px) {
+  .topbar__mock-badge-detail {
+    display: none;
+  }
+}
+.topbar__role,
+.topbar__decisions {
+  color: var(--text-secondary);
+  font-size: var(--fs-support);
+  white-space: nowrap;
+}
+
+.topbar__decisions {
+  padding: var(--sp-1) var(--sp-2);
+  border: var(--border-w) solid var(--attention);
+  border-radius: var(--radius-pill);
+  color: var(--attention);
+  background: var(--attention-soft);
+}

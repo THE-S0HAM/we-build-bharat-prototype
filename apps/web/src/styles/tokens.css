@@ -1,0 +1,201 @@
+/* ============================================================================
+ * CommunityOps design tokens — the single source of truth for every visual
+ * value in the product (requirement 12.1, design.md §6.2).
+ *
+ * Rules that govern this file:
+ *   - LIGHT THEME ONLY (requirement 12.3, design.md §6.1). There is no dark
+ *     variant and no `prefers-color-scheme: dark` block by design.
+ *   - Every colour, type size, type weight, line height, spacing step, radius,
+ *     shadow, z-index, breakpoint, control height and layout dimension lives
+ *     here. A hex code or pixel literal in a component or page is a defect
+ *     (design.md §6.3).
+ *   - Imported exactly once, from `src/main.tsx`, before `index.css`.
+ *
+ * Accessibility — contrast pairings verified against WCAG 2.1 AA
+ * (4.5:1 for text, 3:1 for non-text UI boundaries and focus indicators):
+ *
+ *   --text-primary    on --bg-page 14.63  --bg-surface 15.52  --bg-subtle 13.39
+ *   --text-secondary  on --bg-page  7.42  --bg-surface  7.87  --bg-subtle  6.80
+ *   --text-muted      on --bg-page  5.25  --bg-surface  5.57  --bg-subtle  4.81
+ *   --text-inverse    on --brand    6.43  --brand-strong 9.24 --risk       6.54
+ *   --brand           on --bg-page  6.06  --bg-surface  6.43  --brand-soft 5.52
+ *   --brand-strong    on --bg-surface 9.24
+ *   --attention       on --bg-page  5.12  --bg-surface  5.43  --attention-soft 4.85
+ *   --risk            on --bg-page  6.16  --bg-surface  6.54  --risk-soft  5.72
+ *   --text-inverse    on --risk-strong 9.11
+ *   --border-strong   on --bg-page  3.32  --bg-surface  3.52   (non-text, 3:1)
+ *   --focus-ring      on --bg-page  6.06  --bg-surface  6.43   (non-text, 3:1)
+ *
+ * `--border` is deliberately below 3:1: it is a decorative separator only.
+ * Anything that must be perceivable as a boundary uses `--border-strong`.
+ * ==========================================================================*/
+
+:root {
+  /* --- Surface ------------------------------------------------------------
+   * Warm off-white page, white card surface, faint warm grey for inset areas.
+   * `--bg-raised` shares the surface white on purpose: elevation above a card
+   * is carried by `--shadow-raised`, not by a second shade (design.md §6.2). */
+  --bg-page: #faf8f4;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f1eee7;
+  --bg-raised: #ffffff;
+
+  /* --- Brand -------------------------------------------------------------
+   * Deep community green/teal. `strong` for hover and active, `soft` for tints. */
+  --brand: #0b6b5b;
+  --brand-strong: #085145;
+  --brand-soft: #e2f1ed;
+
+  /* --- Attention ---------------------------------------------------------
+   * Restrained amber. Reserved for "Needs your decision", overdue and
+   * MEDIUM/HIGH risk. Never used decoratively. */
+  --attention: #9a5b00;
+  --attention-soft: #fbf1e0;
+
+  /* --- Risk --------------------------------------------------------------
+   * Restrained red. `--risk` is reserved for CRITICAL severity and
+   * destructive confirmation (design.md §6.4). `--risk-strong` is the hover
+   * and active fill of a destructive control, mirroring `--brand-strong`. */
+  --risk: #b3261e;
+  --risk-strong: #8c1d18;
+  --risk-soft: #fdeceb;
+
+  /* --- Text --------------------------------------------------------------
+   * Deep charcoal primary, never pure black. */
+  --text-primary: #1f2430;
+  --text-secondary: #4a5260;
+  --text-muted: #61687a;
+  --text-inverse: #ffffff;
+
+  /* --- Line --------------------------------------------------------------
+   * Soft neutral borders. `--border-w` is the single hairline width used by
+   * every border in the product, so no rule needs a raw pixel value. The focus
+   * ring is brand-derived and always visible; it is exposed both as a colour
+   * and as an `outline` shorthand so no rule needs a raw width. */
+  --border: #e5e1d8;
+  --border-strong: #8f8878;
+  --border-w: 1px;
+  --focus-ring-color: var(--brand);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring: var(--focus-ring-width) solid var(--focus-ring-color);
+
+  /* --- Typeface ----------------------------------------------------------
+   * One UI font for the entire product (design.md §6.3). The mono face is for
+   * timestamps and identifiers only. */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  /* --- Type scale --------------------------------------------------------
+   * Eight steps. Nothing outside them. */
+  --fs-display: 32px;
+  --fs-page-title: 24px;
+  --fs-section: 18px;
+  --fs-card-title: 15px;
+  --fs-body: 14px;
+  --fs-support: 13px;
+  --fs-meta: 12px;
+  --fs-label: 11px;
+
+  /* --- Type weight and line height --------------------------------------
+   * Weight carries hierarchy before size does. */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --lh-tight: 1.2;
+  --lh-body: 1.5;
+
+  /* --- Tracking ----------------------------------------------------------
+   * Three steps, one per role, because tracking was the one type property with
+   * no token: six different literals had accumulated across twelve stylesheets
+   * (0.02, 0.03, 0.04 and 0.06em for the same uppercase micro-label, -0.01 and
+   * -0.02em for the same large display type), which is the drift design.md
+   * §15.4 asks to be fixed in the token rather than per file.
+   *
+   *   --ls-label    uppercase micro-labels: table headers, metric labels,
+   *                 legends, the demo chip
+   *   --ls-caps     wider caps for a group or brand line: nav group headings,
+   *                 the sign-in eyebrow
+   *   --ls-display  large type only, where default tracking reads loose:
+   *                 page titles, wordmarks
+   *
+   * These are `em` rather than `px` on purpose: tracking scales with the type
+   * it tracks, so one value is correct at every step of the scale. */
+  --ls-label: 0.04em;
+  --ls-caps: 0.06em;
+  --ls-display: -0.01em;
+
+  /* --- Spacing -----------------------------------------------------------
+   * 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64. Only these values appear in layout. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* --- Radius ------------------------------------------------------------
+   * Cards use `md`, badges use `pill`. */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* --- Elevation ---------------------------------------------------------
+   * Three levels only; borders do most of the separation work. Shadows are
+   * tinted with the charcoal of `--text-primary` rather than pure black so
+   * they stay warm against the off-white page. */
+  --shadow-card: 0 1px 2px rgba(31, 36, 48, 0.06);
+  --shadow-raised: 0 2px 8px rgba(31, 36, 48, 0.09);
+  --shadow-drawer: -8px 0 32px rgba(31, 36, 48, 0.16);
+
+  /* --- Z-index -----------------------------------------------------------
+   * Named, never numeric literals. Ordered by real stacking: the overlay is
+   * the scrim that sits under the drawer, so it ranks below it. */
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-overlay: 200;
+  --z-drawer: 300;
+  --z-toast: 400;
+
+  /* --- Breakpoints -------------------------------------------------------
+   * CSS media queries cannot read custom properties, so the fixed set of
+   * media queries repeats these numbers literally. These tokens remain the
+   * reference value every query and every JS width check is written against. */
+  --bp-sm: 640px;
+  --bp-md: 900px;
+  --bp-lg: 1200px;
+  --bp-xl: 1440px;
+
+  /* --- Controls ----------------------------------------------------------
+   * One button height, one input height (requirement 12.11). `--touch-min`
+   * is the minimum interactive target below `--bp-md`. */
+  --control-h: 40px;
+  --control-h-sm: 32px;
+  --input-h: 40px;
+  --touch-min: 44px;
+
+  /* --- Layout ------------------------------------------------------------
+   * Every page uses the same frame.
+   *
+   * `--nav-w-collapsed` is the icon rail between `--bp-md` and `--bp-lg`
+   * (requirement 14.2). It is wider than `--touch-min` so a collapsed entry is
+   * still a legal target, with the rail's own padding either side of it.
+   *
+   * `--nav-panel-w` is the full-height menu panel below `--bp-md`
+   * (requirement 14.3). Wider than `--nav-w` because the panel also holds the
+   * event switcher, which `--nav-w` was never sized for. */
+  --content-max: 1280px;
+  --page-pad-x: 32px;
+  --page-pad-y: 24px;
+  --header-h: 64px;
+  --nav-w: 248px;
+  --nav-w-collapsed: 72px;
+  --nav-panel-w: 320px;
+  --card-pad: 24px;
+  --drawer-w: 480px;
+}

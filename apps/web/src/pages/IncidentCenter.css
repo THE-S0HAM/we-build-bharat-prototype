@@ -1,0 +1,202 @@
+/* ============================================================================
+ * IncidentOps — page-scoped rules (design.md §8.5, requirements 12.1, 12.2).
+ *
+ * Every value is a token from `src/styles/tokens.css`. No hex colour, no raw
+ * pixel size, and no inline `style` literal in the page (design.md §6.3).
+ *
+ * The page's sections, table cells, drawer headings and sections, detail rows
+ * and change form come from the shared families in `src/index.css`
+ * (`.page-section*`, `.cell-stack*`, `.drawer-*`, `.detail-list*`, `.form-*`), and
+ * its contextual visual from the shared `DistributionBar`. What is left here is
+ * what is genuinely this page's: the status text, the next-action cell, the
+ * severity fills, and the proposal / analysis / derived-approval bodies.
+ *
+ * Colour discipline on this page:
+ *   - Severity is `RiskIndicator`'s, which owns the four levels and reserves
+ *     `--risk` for CRITICAL (design.md §6.4). The page adds no severity colour of
+ *     its own to a row or a card rule.
+ *   - `Incident.status` is typed `string`, so it has no `StatusBadge` domain and
+ *     renders as plain secondary text here. No status→colour mapping exists in
+ *     this file (requirement 12.5).
+ *   - The severity fills are the one exception, and they are not a status
+ *     mapping: they belong to the page's single contextual visual, and every
+ *     segment they tint is also labelled and counted in the legend beside it
+ *     (requirements 12.10, 15.10). Their escalation mirrors §6.4 — neutral, then
+ *     attention, then the red only at CRITICAL.
+ *
+ * Contrast, from the pairings verified in `tokens.css` (WCAG AA, 4.5:1):
+ *   --text-secondary on --bg-page 7.42, --bg-surface 7.87
+ *   --text-muted     on --bg-surface 5.57
+ *   --border-strong  on --bg-surface 3.52 (non-text boundary, 3:1)
+ * ==========================================================================*/
+
+/* --- Sections ------------------------------------------------------------
+ * The heading, count, description and empty line are `.page-section*`'s. Only
+ * the rhythm between this page's two sections is its own: the active list and
+ * the resolved list sit further apart than a section's internal spacing. */
+
+.incident-section {
+  margin-top: var(--sp-8);
+}
+
+/* --- Row cells ----------------------------------------------------------
+ * The stack itself is `.cell-stack`'s. Status is text, never a colour
+ * (requirement 12.5). */
+
+.incident-status {
+  color: var(--text-secondary);
+}
+
+.incident-next {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+
+.incident-next__action {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+  line-height: var(--lh-body);
+}
+
+/* --- Severity distribution: the page's one contextual visual --------------
+ * Requirements 8.3, 12.10. The frame, the bar geometry, the legend rhythm and
+ * the sentence are `DistributionBar`'s; the four fills below are this page's,
+ * because CRITICAL / HIGH / MEDIUM / LOW is this page's vocabulary.
+ *
+ * Scoped under `.incident-ops` so these fills reach this page's bar and no
+ * other's, and so they outrank `DistributionBar.css`'s neutral defaults on
+ * specificity rather than on import order. Each rule sets both properties
+ * because the bar segment is an SVG `<rect>`, which takes `fill`, and the legend
+ * swatch is a `<span>`, which takes `background`; one pair of values, stated
+ * once, is what keeps the swatch from ever drifting from the segment it repeats.
+ * ------------------------------------------------------------------------- */
+
+.incident-ops .distribution__segment[data-segment="CRITICAL"],
+.incident-ops .distribution__swatch[data-segment="CRITICAL"] {
+  fill: var(--risk);
+  background: var(--risk);
+  border-color: var(--risk);
+}
+
+.incident-ops .distribution__segment[data-segment="HIGH"],
+.incident-ops .distribution__swatch[data-segment="HIGH"] {
+  fill: var(--attention);
+  background: var(--attention);
+  border-color: var(--attention);
+}
+
+.incident-ops .distribution__segment[data-segment="MEDIUM"],
+.incident-ops .distribution__swatch[data-segment="MEDIUM"] {
+  fill: var(--attention-soft);
+  background: var(--attention-soft);
+  border-color: var(--attention);
+}
+
+.incident-ops .distribution__segment[data-segment="LOW"],
+.incident-ops .distribution__swatch[data-segment="LOW"] {
+  fill: var(--border);
+  background: var(--bg-subtle);
+}
+
+/* --- Drawer bodies -------------------------------------------------------
+ * The sections themselves are `.drawer-section`'s; these are the lines inside
+ * them. */
+
+.incident-proposal__body,
+.incident-analysis__body {
+  line-height: var(--lh-body);
+}
+
+.incident-proposal__state {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+  line-height: var(--lh-body);
+}
+
+.incident-proposal__empty,
+.incident-analysis__empty,
+.incident-derived__empty {
+  font-size: var(--fs-support);
+  color: var(--text-muted);
+  line-height: var(--lh-body);
+}
+
+.incident-analysis__counted {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+
+.incident-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  list-style: none;
+}
+
+.incident-list__item {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-subtle);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-support);
+  color: var(--text-primary);
+}
+
+/* --- Derived approval linkage ------------------------------------------- */
+
+.incident-derived__note {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+  line-height: var(--lh-body);
+  margin-bottom: var(--sp-3);
+}
+
+.incident-derived__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  list-style: none;
+}
+
+.incident-derived__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--bg-subtle);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.incident-derived__title {
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.incident-derived__states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.incident-derived__agent {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+.incident-derived__link {
+  display: inline-block;
+  margin-top: var(--sp-3);
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+  color: var(--brand);
+}
+
+/* This page defines no responsive block of its own. `DataTable` hides the
+   secondary columns below `--bp-md`, and `.page-section__header` stacks there
+   through the shared rule in `index.css` — the behaviour is every section
+   header's, not this page's. */

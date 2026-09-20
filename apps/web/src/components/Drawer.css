@@ -1,0 +1,227 @@
+/* ============================================================================
+ * Drawer — the one progressive-disclosure surface in the product
+ * (requirement 12.6, design.md §7 and §7.1).
+ *
+ * Every value here comes from `src/styles/tokens.css`. No colour, size, radius,
+ * shadow or spacing literal appears below (design.md §6.3). The only literal
+ * numbers are the `--bp-sm` breakpoint, because CSS media queries cannot read
+ * custom properties, and the animation duration, which matches the 0.15s the
+ * rest of the product already uses for state transitions.
+ *
+ * The scrim and the panel are siblings rather than nested, so each carries its
+ * own token z-index exactly as the stack is specified: the scrim at
+ * `--z-overlay`, the panel above it at `--z-drawer`.
+ *
+ * The focus ring and the `prefers-reduced-motion` suppression in `index.css` are
+ * consumed, not restated. The one local reduced-motion block below is a
+ * statement of intent for this component's own animation, not an override.
+ * ==========================================================================*/
+
+/* --- Scrim ----------------------------------------------------------------
+ * Covers the page while the drawer is open: it dims what is behind, and it is
+ * the surface a click-outside dismissal lands on. */
+.drawer__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  /* There is no scrim colour token, and `tokens.css` is the only place a colour
+     may be defined, so the scrim is mixed from the charcoal of --text-primary
+     rather than introducing a literal here. */
+  background: color-mix(in srgb, var(--text-primary) 45%, transparent);
+  animation: drawer-scrim-in 0.15s ease-out;
+}
+
+/* --- Panel ---------------------------------------------------------------*/
+.drawer__panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-drawer);
+  display: flex;
+  flex-direction: column;
+  width: var(--drawer-w);
+  /* Never wider than the viewport, so the drawer cannot introduce horizontal
+     page scroll at any width (requirement 14.7). */
+  max-width: 100%;
+  background: var(--bg-surface);
+  /* The panel edge must read as a boundary against the dimmed page, so
+     --border-strong rather than the decorative --border. */
+  border-left: var(--border-w) solid var(--border-strong);
+  box-shadow: var(--shadow-drawer);
+  animation: drawer-panel-in 0.15s ease-out;
+}
+
+/* The panel takes focus on open so the dialog is announced from its heading. It
+   is a container, not a control, so no ring is drawn around the whole surface —
+   the content's own controls carry the focus indicator from `index.css`. */
+.drawer__panel:focus {
+  outline: none;
+}
+
+/* --- Header --------------------------------------------------------------
+ * Fixed above the scrolling body, so the drawer's title and its Close control
+ * stay reachable however long the content is. */
+.drawer__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--card-pad);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+.drawer__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  /* Flex items default to `min-width: auto`, which lets a long unbroken title
+     push the Close control off the panel. */
+  min-width: 0;
+}
+
+.drawer__title {
+  font-size: var(--fs-section);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+
+.drawer__description {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+.drawer__close {
+  flex: 0 0 auto;
+}
+
+/* --- Body ----------------------------------------------------------------
+ * The only scrolling region in the drawer. `overscroll-behavior: contain` stops
+ * a scroll that reaches the end of the panel from chaining to the page behind
+ * it, which the body scroll lock alone does not prevent on touch. */
+.drawer__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--card-pad);
+}
+
+/* --- Footer --------------------------------------------------------------
+ * Optional action row, pinned below the body on the panel surface. */
+.drawer__footer {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--card-pad);
+  border-top: var(--border-w) solid var(--border);
+  background: var(--bg-surface);
+}
+
+/* --- Motion --------------------------------------------------------------
+ * Open only: the drawer unmounts on close, so there is nothing to animate out.
+ * Movement is along one axis and short, matching the product's existing 0.15s
+ * state transitions. */
+@keyframes drawer-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drawer-panel-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* A full-screen sheet covers the page rather than sliding in beside it, so it
+   rises from the bottom edge instead of in from the right. */
+@keyframes drawer-sheet-in {
+  from {
+    transform: translateY(var(--sp-8));
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* --- Below --bp-md (900px) -----------------------------------------------
+ * Touch minimum on the drawer's own control (requirement 14.6). The shared rule
+ * in `index.css` already covers every `button` at this width; this states it on
+ * the Close control because the drawer's dismissal is the one target a
+ * full-screen sheet cannot do without. */
+@media (max-width: 899px) {
+  .drawer__close {
+    min-height: var(--touch-min);
+  }
+}
+
+/* --- Below --bp-sm (640px) -----------------------------------------------
+ * The panel becomes a full-screen sheet with an explicit Close
+ * (requirement 14.4).
+ *
+ * The Close control is in the header at every width, so there is no
+ * width-specific control to add — only to guarantee it stays reachable. The
+ * header is a non-shrinking flex item above the one scrolling region, so it
+ * stays on screen however long the content is, and it takes the page tint and a
+ * perceivable rule so it reads as the sheet's bar rather than as content.
+ *
+ * `inset: 0` rather than a width: a sheet covers the viewport, and an inset
+ * cannot be widened past it, so the sheet cannot introduce horizontal page
+ * scroll (requirement 14.7). */
+@media (max-width: 639px) {
+  .drawer__panel {
+    inset: 0;
+    width: auto;
+    max-width: none;
+    border-left: none;
+    animation-name: drawer-sheet-in;
+  }
+
+  .drawer__header {
+    /* Sticky as well as non-shrinking: if a browser ever lets the panel itself
+       scroll, Close still travels with it. */
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    padding: var(--sp-4);
+    background: var(--bg-surface);
+    border-bottom: var(--border-w) solid var(--border-strong);
+  }
+
+  .drawer__body {
+    padding: var(--sp-4);
+  }
+
+  /* Footer actions stack full width rather than crowding one row, so every
+     label stays readable and every target keeps the touch minimum
+     (requirements 14.5, 14.6). */
+  .drawer__footer {
+    flex-direction: column;
+    align-items: stretch;
+    padding: var(--sp-4);
+  }
+}
+
+/* Requirement 15.11. The global block in `index.css` also suppresses this; the
+   rule is stated locally so the component is honest on its own. It is last in
+   the file so no later rule can reinstate an animation name. */
+@media (prefers-reduced-motion: reduce) {
+  .drawer__scrim,
+  .drawer__panel {
+    animation: none;
+  }
+}

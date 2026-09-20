@@ -1,0 +1,143 @@
+/* ============================================================================
+ * Audit Log — page-scoped rules (design.md §8.8, requirements 12.1, 12.2).
+ *
+ * Every value is a token from `src/styles/tokens.css`. No hex colour, no raw
+ * pixel size, no inline `style` literal anywhere in the page.
+ *
+ * Density is the design here: "Density and scannability are the value" (§8.8).
+ * The page has no card frame and no contextual visual — day headings and the
+ * `Timeline` hairline rules carry the whole structure, so several hundred
+ * entries stay readable.
+ *
+ * Contrast, from the pairings verified in `tokens.css` (WCAG AA, 4.5:1):
+ *   --text-secondary on --bg-page  7.87
+ *   --text-muted     on --bg-page  5.74
+ * ==========================================================================*/
+
+/* The page's vertical rhythm is the shared `.page` class's, applied alongside
+   `.audit-log` in the page (requirement 12.4). Day sections therefore carry no
+   bottom margin of their own: the stack's gap spaces them, and a gap needs no
+   `:last-of-type` exception to avoid trailing space. */
+
+/* --- Actor-type filters ----------------------------------------------------
+ * A real fieldset of real checkboxes: the group is named by its legend, each
+ * control is named by its label, and the selected state is the checkbox's own
+ * (requirement 15.7, 15.8). Nothing here is a styled div pretending to be a
+ * control. */
+.audit-log__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-block-end: var(--sp-6);
+  padding: var(--sp-3) var(--sp-4);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.audit-log__filters-legend {
+  padding-inline: var(--sp-2);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
+
+/* A facet is a `.form-check` — the shared checkbox row, which carries the layout,
+   the type, the pointer and the touch minimum below `--bp-md`. It needs nothing
+   of its own beyond the full-width rule in the responsive block below. */
+
+/* The native control, kept native: it carries the checked state, the keyboard
+   behaviour and the focus ring from `index.css`. Only its size is set, to the
+   spacing step the label's type sits on. */
+.audit-log__facet-input {
+  inline-size: var(--sp-4);
+  block-size: var(--sp-4);
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+/* --- Day sections ---------------------------------------------------------
+ * One section per day, each with its own `<h2>` under the page's single `<h1>`
+ * (requirement 15.1). The heading is sticky so the day a row belongs to is
+ * still visible when the record is long.
+ *
+ * `.audit-log__day` itself carries no rule, and should not gain one: the stack's
+ * gap spaces the sections, and the two rules it used to hold — a bottom margin
+ * and a `:last-of-type` exception to cancel it on the final day — were a second
+ * source of vertical rhythm competing with `.page`. The class stays as the
+ * section's name. */
+.audit-log__day-heading {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  padding-block: var(--sp-2);
+  margin-block-end: var(--sp-2);
+  border-block-end: var(--border-w) solid var(--border-strong);
+  background: var(--bg-page);
+  font-size: var(--fs-section);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* --- Outcome --------------------------------------------------------------
+ * `AuditEvent.outcome` is typed `string`, not a union, so there is no
+ * `StatusBadge` domain for it and this page must not invent a colour mapping:
+ * requirement 12.5 reserves status-to-colour for that one component. Plain
+ * secondary text, so the outcome is never carried by colour alone
+ * (requirement 15.10). */
+.audit-log__outcome {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Announced, never shown: sighted readers get the outcome from the column, a
+   screen reader gets "Outcome: Success". Same technique as the sidebar and the
+   skeleton regions. */
+.audit-log__outcome-label {
+  position: absolute;
+  inline-size: var(--border-w);
+  block-size: var(--border-w);
+  margin: calc(var(--border-w) * -1);
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- Paging ---------------------------------------------------------------
+ * A real button, at the product's one button height (requirement 12.11). It is
+ * rendered only while a larger page could return something, so it never makes
+ * an offer the endpoint's 200 cap cannot keep. */
+.audit-log__more {
+  align-self: center;
+  margin-block-start: var(--sp-6);
+}
+
+.audit-log__note {
+  margin-block-start: var(--sp-6);
+  font-size: var(--fs-support);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* --- Below --bp-md (900px) -------------------------------------------------
+ * Requirement 14.6. The touch minimum comes from `index.css`, which applies it
+ * to `.form-check` — the `<label>` wrapping the box, since the box itself is
+ * drawn by the platform at the size the user's settings decide. All this file
+ * adds is the stack: three full-width rows replace three cramped inline ones.
+ * Media queries cannot read custom properties, so the breakpoint repeats the
+ * `--bp-md` value. */
+@media (max-width: 899px) {
+  .audit-log__filters {
+    gap: var(--sp-2);
+  }
+
+  .audit-log__facet {
+    inline-size: 100%;
+  }
+}

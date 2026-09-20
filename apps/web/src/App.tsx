@@ -1,302 +1,263 @@
 /**
- * Application root: routing, session, and the shared event context.
+ * The console's frame and route table (design.md §5.5, §15.1).
  *
- * The router renders unconditionally. Previously the session gate returned `<Login/>` *before*
- * `<Routes>`, which made every public path unreachable — that is why there was no landing page. Now
- * `/` and `/login` are public and everything under `/app` sits behind a guard.
+ * Four things happen here and nothing else: the session is provided, the event
+ * context is provided behind it, routes are declared, and the shell is composed
+ * from `AppShell`, `Sidebar` and `Topbar`. The session gate that used to be
+ * inlined in this file now lives in `src/session/` behind `RequireSession`, so
+ * "is there a session?" is answered in one place and asked by the router rather
+ * than by this component.
  *
- * The guard is a convenience, not the control. Authorization is the API's: it resolves team scope from
- * DynamoDB and refuses out-of-scope requests whatever this component believed. A member removed from
- * a team keeps a valid token until it expires, so screens treat 403 as a normal outcome.
+ * `const EVENT_ID = "EVT-devcon-2026"` used to live here too (design.md A16). It
+ * is gone: the active event comes from `EventProvider`, which resolves it from
+ * `GET /events`, and the route table hands it to the event-scoped pages.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-
-import { ApiError, DEFAULT_EVENT_ID, getCommandCenter, getEvents, isMockMode, startDemoSession } from "./api";
-import { getSignedInUser, isAuthConfigured, signOut } from "./auth";
+import { useEffect, useState, type ReactNode } from "react";
+import { getCommandCenter } from "./api";
+import { Outlet, Route, Routes } from "react-router-dom";
+import { CAPABILITIES } from "./capabilities";
 import { AppShell } from "./components/AppShell";
-import { ErrorState, LoadingState } from "./components/primitives";
-import { AgentConsole } from "./pages/AgentConsole";
-import { ApprovalsPage } from "./pages/Approvals";
-import { AttendeeOpsPage } from "./pages/AttendeeOps";
-import { AuditLogPage } from "./pages/AuditLog";
-import { BudgetPage } from "./pages/Budget";
-import { CheckinConsole } from "./pages/CheckinConsole";
-import { CommandCenter } from "./pages/CommandCenter";
-import { IncidentOpsPage } from "./pages/IncidentOps";
-import { Landing } from "./pages/Landing";
+import { DemoWorkspaceChip } from "./components/DemoWorkspaceChip";
+import { EventSwitcher } from "./components/EventSwitcher";
+import { Sidebar } from "./components/Sidebar";
+import { Skeleton, SkeletonRegion } from "./components/Skeleton";
+import { Topbar } from "./components/Topbar";
+import { useEventContext } from "./event/eventContext";
+import { EventProvider } from "./event/EventProvider";
+import { NoEventsState } from "./event/NoEventsState";
 import { Login } from "./pages/Login";
-import { SpeakerOpsPage } from "./pages/SpeakerOps";
-import { TeamOpsPage } from "./pages/TeamOps";
-import type { HealthBand, Role } from "./types";
+import { NotFound } from "./pages/NotFound";
+import { protectedRoutes } from "./routes";
+import { LOGIN_ROUTE } from "./session/intendedRoute";
+import { RedirectWhenAuthenticated, RequireSession } from "./session/routeGuards";
+import { SessionProvider } from "./session/SessionProvider";
+import { useSession } from "./session/sessionContext";
 
-type SessionState = "checking" | "signed-in" | "signed-out";
+/** What a session restore announces. One sentence, no implementation detail. */
+const RESTORING_SESSION = "Restoring session…";
 
-interface Session {
-  email: string;
-  name: string;
-  role: Role;
-  isDemo: boolean;
+interface ConsoleFrameProps {
+  /**
+   * The top bar's event switcher. Omitted while the session is unresolved, where
+   * there is no event context above the frame yet and a switcher would have
+   * nothing true to show.
+   */
+  eventSwitcher?: ReactNode;
+
+  /** The "Demo workspace" chip, which renders itself only for a demo session. */
+  demoWorkspaceChip?: ReactNode;
+
+  /**
+   * The organization has no event, so every event-scoped navigation entry is
+   * disabled rather than removed (requirement 3.10).
+   */
+  eventScopedNavDisabled?: boolean;
+  pendingApprovals?: number;
+
+  children: ReactNode;
 }
 
-/** Fun Mode is a per-user preference with no operational effect, so it lives client-side. */
-const FUN_MODE_KEY = "communityops.funMode";
+/**
+ * The shell, identical on every protected route (requirement 12.4).
+ *
+ * The same frame renders while the session is unresolved and after it resolves —
+ * only the content region and the top bar's context group change — so nothing in
+ * the navigation moves when the session lands.
+ *
+ * The `Sidebar` account block is deliberately absent: it displays the `name` and
+ * `email` claims and the *active organization* (requirement 3.6), and the active
+ * organization is derived from the token's groups by task 2.2. An account block
+ * with a guessed organization would be invented identity, so there is none until
+ * that lands.
+ */
+function ConsoleFrame({
+  eventSwitcher,
+  demoWorkspaceChip,
+  eventScopedNavDisabled = false,
+  pendingApprovals = 0,
+  children,
+}: ConsoleFrameProps) {
+  const { activeOrganizationId, signOut, user } = useSession();
 
-function readFunMode(): boolean {
-  try {
-    return localStorage.getItem(FUN_MODE_KEY) === "true";
-  } catch {
-    return false;
-  }
+  return (
+    <AppShell
+      navigation={
+        <Sidebar
+          capabilities={CAPABILITIES}
+          eventScopedDisabled={eventScopedNavDisabled}
+          pendingApprovals={pendingApprovals}
+          account={user ? { name: user.name, email: user.email, organizationId: activeOrganizationId ?? "", role: user.role } : undefined}
+        />
+      }
+      topbar={
+        <Topbar
+          eventSwitcher={eventSwitcher}
+          demoWorkspaceChip={demoWorkspaceChip}
+          role={user?.role}
+          pendingDecisions={pendingApprovals}
+          onSignOut={signOut}
+        />
+      }
+    >
+      {children}
+    </AppShell>
+  );
+}
+
+/**
+ * The frame for a route that has event context above it (requirements 3.10,
+ * 3.11).
+ *
+ * This is the one place the event context reaches the frame, and it fills the
+ * top bar's two context slots: the `EventSwitcher`, which is the sole writer of
+ * event context from the UI, and the "Demo workspace" chip, which decides for
+ * itself whether the session is a demo one.
+ *
+ * ## Zero events is a state of the console, not of a page
+ *
+ * When `GET /events` answers with nothing, two things happen together and both
+ * belong here rather than in six pages (requirement 3.10):
+ *
+ *   - the content region carries the no-events state, which is why
+ *     `EventScopedView` renders nothing for `empty` — one sentence for the whole
+ *     console instead of the same sentence on every event-scoped route;
+ *   - every event-scoped navigation entry is disabled, so the reason a route
+ *     cannot be opened is visible in the same frame as the explanation.
+ *
+ * It replaces the routed view for every protected route, including the
+ * org-level Command Center: with no event there is no operation to summarise,
+ * and a greeting above an empty visual would be a page pretending to work.
+ */
+function EventAwareFrame({ children }: { children: ReactNode }) {
+  const { status } = useEventContext();
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+  const noEvents = status === "empty";
+
+  useEffect(() => {
+    let active = true;
+    getCommandCenter().then(
+      (overview) => { if (active) setPendingApprovals(overview.summary.pending_approvals); },
+      () => { if (active) setPendingApprovals(0); },
+    );
+    return () => { active = false; };
+  }, []);
+
+  return (
+    <ConsoleFrame
+      eventSwitcher={<EventSwitcher />}
+      demoWorkspaceChip={<DemoWorkspaceChip />}
+      eventScopedNavDisabled={noEvents}
+      pendingApprovals={pendingApprovals}
+    >
+      {noEvents ? <NoEventsState /> : children}
+    </ConsoleFrame>
+  );
+}
+
+/**
+ * The content region while the session is unresolved (requirement 1.4).
+ *
+ * Shape-preserving placeholders in a single announced region: a page title, its
+ * context line, and the first block of content. No spinner, and no login form.
+ */
+function SessionSkeleton() {
+  return (
+    <SkeletonRegion label={RESTORING_SESSION}>
+      <Skeleton shape="heading" width="half" />
+      <Skeleton shape="line" width="narrow" />
+      <Skeleton shape="block" />
+    </SkeletonRegion>
+  );
+}
+
+/**
+ * The layout every protected route renders inside.
+ *
+ * `RequireSession` swaps the content region rather than the frame, so a page
+ * never mounts — and never fires a request — before a token is known to be
+ * available.
+ *
+ * `EventProvider` sits inside that gate and outside the frame, which is the only
+ * placement that satisfies both halves of the event context: inside, so
+ * `GET /events` is never issued without a session (requirement 3.7); outside the
+ * frame, so the `Topbar` switcher and the page in the content region read the
+ * same active event rather than two copies of it (requirement 3.11).
+ */
+function ProtectedLayout() {
+  return (
+    <RequireSession
+      skeleton={
+        <ConsoleFrame>
+          <SessionSkeleton />
+        </ConsoleFrame>
+      }
+    >
+      <EventProvider>
+        <EventAwareFrame>
+          <Outlet />
+        </EventAwareFrame>
+      </EventProvider>
+    </RequireSession>
+  );
+}
+
+/**
+ * The sign-in screen. Sign-in itself does not navigate: it re-reads the session,
+ * and `RedirectWhenAuthenticated` sends the visitor to the route they originally
+ * asked for (requirements 1.1, 1.5).
+ */
+function LoginRoute() {
+  const { refresh } = useSession();
+
+  return (
+    <Login
+      onSignedIn={() => {
+        void refresh();
+      }}
+    />
+  );
+}
+
+/**
+ * The unresolved state for `/login`. A signed-in visitor who opens this address
+ * is about to be redirected away, so the login form must not render first.
+ *
+ * It borrows the sign-in screen's own layout classes — `Login.css`, imported by
+ * `Login` above — so the message sits exactly where the form will, and the
+ * screen does not jump when the session resolves.
+ */
+function LoginPending() {
+  return (
+    <main className="login">
+      <p className="login__restoring" role="status">
+        {RESTORING_SESSION}
+      </p>
+    </main>
+  );
 }
 
 export function App() {
-  // Mock mode is for local UI work with no backend, so it needs no session.
-  const [sessionState, setSessionState] = useState<SessionState>(
-    isMockMode || !isAuthConfigured ? "signed-in" : "checking",
-  );
-  const [session, setSession] = useState<Session | null>(null);
-
-  const [eventId, setEventId] = useState(DEFAULT_EVENT_ID);
-  const [events, setEvents] = useState<{ event_id: string; name: string }[]>([]);
-  const [eventName, setEventName] = useState("");
-  const [healthBand, setHealthBand] = useState<HealthBand>("GREEN");
-  const [decisionCount, setDecisionCount] = useState(0);
-
-  const [demoBusy, setDemoBusy] = useState(false);
-  const [demoUnavailable, setDemoUnavailable] = useState<string | undefined>();
-  const [shellError, setShellError] = useState<string | undefined>();
-  const [funMode, setFunMode] = useState(readFunMode);
-
-  const location = useLocation();
-
-  const loadSession = useCallback(async () => {
-    if (isMockMode || !isAuthConfigured) {
-      setSession({ email: "local@communityops.local", name: "Local", role: "LEADER", isDemo: false });
-      setSessionState("signed-in");
-      return;
-    }
-    const user = await getSignedInUser();
-    if (user) {
-      setSession({ email: user.email, name: user.name, role: user.role, isDemo: user.isDemo });
-      setSessionState("signed-in");
-    } else {
-      setSession(null);
-      setSessionState("signed-out");
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadSession();
-  }, [loadSession]);
-
-  /**
-   * Load the shell's context: which events exist and what needs attention.
-   *
-   * One call to the command centre supplies the decision count and health band, so the shell does not
-   * need its own aggregation and cannot disagree with the Command Center page about how many decisions
-   * are waiting.
-   */
-  const loadShellContext = useCallback(async () => {
-    if (sessionState !== "signed-in") return;
-    setShellError(undefined);
-    try {
-      const [eventList, commandCenter] = await Promise.all([
-        getEvents().catch(() => ({ events: [], count: 0 })),
-        getCommandCenter(),
-      ]);
-
-      const usable = eventList.events.map((e) => ({ event_id: e.event_id, name: e.name }));
-      setEvents(usable);
-
-      // Prefer the event already in context; otherwise take the first the backend reports, so a
-      // deployment with a different seeded event still lands somewhere real.
-      const active =
-        commandCenter.events.find((e) => e.event_id === eventId) ?? commandCenter.events[0];
-      if (active) {
-        if (active.event_id !== eventId) setEventId(active.event_id);
-        setEventName(active.name);
-        setHealthBand(active.health_band);
-      }
-      setDecisionCount(commandCenter.summary.pending_approvals);
-    } catch (err) {
-      if (err instanceof ApiError && err.isUnauthenticated) {
-        setSessionState("signed-out");
-        return;
-      }
-      setShellError(
-        err instanceof ApiError ? err.message : "Could not load your workspace.",
-      );
-    }
-  }, [sessionState, eventId]);
-
-  useEffect(() => {
-    void loadShellContext();
-  }, [loadShellContext]);
-
-  const handleTryDemo = useCallback(async () => {
-    setDemoBusy(true);
-    setDemoUnavailable(undefined);
-    try {
-      await startDemoSession();
-      await loadSession();
-    } catch (err) {
-      // A 404 means this deployment has no demo credentials configured. Recorded so the login page
-      // hides the action rather than offering a button that keeps failing.
-      if (err instanceof ApiError && err.status === 404) {
-        setDemoUnavailable(
-          "Demo access is not configured on this deployment. Sign in with an account instead.",
-        );
-      } else {
-        setDemoUnavailable(
-          err instanceof ApiError ? err.message : "The demo could not be opened. Please try again.",
-        );
-      }
-    } finally {
-      setDemoBusy(false);
-    }
-  }, [loadSession]);
-
-  const handleSignOut = useCallback(() => {
-    signOut();
-    setSession(null);
-    setSessionState("signed-out");
-  }, []);
-
-  const toggleFunMode = useCallback(() => {
-    setFunMode((previous) => {
-      const next = !previous;
-      try {
-        localStorage.setItem(FUN_MODE_KEY, String(next));
-      } catch {
-        /* preference is best-effort */
-      }
-      return next;
-    });
-  }, []);
-
-  if (sessionState === "checking") {
-    return (
-      <div className="auth-shell">
-        <p role="status">Restoring your session…</p>
-      </div>
-    );
-  }
-
-  const signedIn = sessionState === "signed-in" && session !== null;
-  const role: Role = session?.role ?? "TEAM_MEMBER";
-
   return (
-    <Routes>
-      {/* Public */}
-      <Route
-        path="/"
-        element={
-          signedIn ? (
-            <Navigate to="/app" replace />
-          ) : (
-            <Landing onTryDemo={handleTryDemo} demoBusy={demoBusy} />
-          )
-        }
-      />
-      <Route
-        path="/login"
-        element={
-          signedIn ? (
-            <Navigate to="/app" replace />
-          ) : (
-            <Login
-              onSignedIn={() => void loadSession()}
-              onTryDemo={handleTryDemo}
-              demoBusy={demoBusy}
-              demoUnavailableReason={demoUnavailable}
-            />
-          )
-        }
-      />
+    <SessionProvider>
+      <Routes>
+        <Route
+          path={LOGIN_ROUTE}
+          element={
+            <RedirectWhenAuthenticated pending={<LoginPending />}>
+              <LoginRoute />
+            </RedirectWhenAuthenticated>
+          }
+        />
 
-      {/* Guarded */}
-      <Route
-        path="/app"
-        element={
-          signedIn ? (
-            <AppShell
-              role={role}
-              email={session?.email ?? ""}
-              isDemo={session?.isDemo ?? false}
-              eventName={eventName}
-              healthBand={healthBand}
-              decisionCount={decisionCount}
-              onSignOut={handleSignOut}
-              events={events}
-              eventId={eventId}
-              onEventChange={setEventId}
-            />
-          ) : (
-            // Preserve where they were heading so sign-in returns them there.
-            <Navigate to="/login" replace state={{ from: location.pathname }} />
-          )
-        }
-      >
-        <Route
-          index
-          element={
-            shellError ? (
-              <ErrorState message={shellError} onRetry={() => void loadShellContext()} />
-            ) : !eventName && events.length === 0 ? (
-              <LoadingState />
-            ) : (
-              <CommandCenter
-                eventId={eventId}
-                role={role}
-                funMode={funMode}
-                onToggleFunMode={toggleFunMode}
-              />
-            )
-          }
-        />
-        <Route path="speakers" element={<SpeakerOpsPage eventId={eventId} role={role} />} />
-        <Route path="teams" element={<TeamOpsPage eventId={eventId} role={role} />} />
-        <Route path="attendees" element={<AttendeeOpsPage eventId={eventId} />} />
-        <Route
-          path="incidents"
-          element={
-            <IncidentOpsPage
-              eventId={eventId}
-              role={role}
-              onChanged={() => void loadShellContext()}
-            />
-          }
-        />
-        <Route path="checkin" element={<CheckinConsole eventId={eventId} />} />
-        <Route
-          path="approvals"
-          element={
-            <ApprovalsPage
-              eventId={eventId}
-              role={role}
-              onDecided={() => void loadShellContext()}
-            />
-          }
-        />
-        <Route path="budget" element={<BudgetPage eventId={eventId} role={role} />} />
-        <Route path="audit" element={<AuditLogPage eventId={eventId} role={role} />} />
-        <Route
-          path="agent"
-          element={
-            <AgentConsole
-              eventId={eventId}
-              role={role}
-              funMode={funMode}
-              onToggleFunMode={toggleFunMode}
-            />
-          }
-        />
-        <Route path="*" element={<Navigate to="/app" replace />} />
-      </Route>
+        <Route element={<ProtectedLayout />}>
+          {protectedRoutes(CAPABILITIES)}
 
-      <Route path="*" element={<Navigate to={signedIn ? "/app" : "/"} replace />} />
-    </Routes>
+          {/* Every unmatched address, including a capability-gated one whose flag
+              is off, resolves here — inside the shell (requirement 11.1). */}
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Routes>
+    </SessionProvider>
   );
 }

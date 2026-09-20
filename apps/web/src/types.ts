@@ -1,44 +1,8 @@
-/**
- * Domain types mirroring the Python backend.
- *
- * Field names stay snake_case because that is what the API returns; translating at the boundary
- * would mean maintaining a mapping layer whose only purpose is casing, and every mismatch would be
- * a silent undefined rather than a type error.
- *
- * Where the backend derives a value (overdue-ness, health score, budget remaining) the type says so
- * in a comment. Those are read, never recomputed here — a figure calculated in React can disagree
- * with the one the backend committed.
- */
-
-// ---------------------------------------------------------------------------
-// Shared vocabulary
-// ---------------------------------------------------------------------------
-
-/** The status vocabulary the UI renders. Each has a matching `.badge-*` rule. */
-export type StatusTone =
-  | "handled"
-  | "needs-decision"
-  | "pending"
-  | "blocked"
-  | "overdue"
-  | "at-risk"
-  | "completed"
-  | "cannot-automate"
-  | "info"
-  | "critical"
-  | "high"
-  | "medium"
-  | "low";
-
-export type HealthBand = "GREEN" | "YELLOW" | "ORANGE" | "RED";
+/** Strict frontend contracts for the CommunityOps HTTP API. */
 
 export type Role = "LEADER" | "TEAM_MEMBER";
-
 export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
-
-// ---------------------------------------------------------------------------
-// Event
-// ---------------------------------------------------------------------------
+export type HealthBand = "GREEN" | "YELLOW" | "ORANGE" | "RED";
 
 export interface Event {
   event_id: string;
@@ -53,12 +17,16 @@ export interface Event {
   expected_attendees: number;
   registration_target?: number;
   registration_open: boolean;
-  total_budget?: number;
   tags: string[];
-  /** Cached by the backend. Authoritative value comes from the health endpoint. */
   health_band?: HealthBand;
   health_score?: number;
   health_reasons?: string[];
+}
+
+export interface HealthReason {
+  signal: string;
+  points: number;
+  detail: string;
 }
 
 export interface EventHealth {
@@ -67,18 +35,21 @@ export interface EventHealth {
   health_band: HealthBand;
   health_score: number;
   health_reasons: string[];
-  /** Each signal with the penalty points it contributed, so the score is explainable. */
-  health_signals: { signal: string; points: number; detail: string }[];
+  health_signals: HealthReason[];
   health_summary: string;
   computed_at: string;
-  inputs: Record<string, number | null>;
+  inputs: {
+    overdue_tasks: number;
+    blocked_tasks: number;
+    open_incidents: number;
+    silent_speakers: number;
+    stale_approvals: number;
+    budget_utilization_percent: number;
+    hours_until_start: number | null;
+    attendee_data_completeness_percent: number;
+  };
 }
 
-// ---------------------------------------------------------------------------
-// Command Center
-// ---------------------------------------------------------------------------
-
-/** One thing needing the leader. Carries its own navigation target. */
 export interface AttentionItem {
   kind: "INCIDENT" | "APPROVAL" | "TASK" | "SPEAKER" | "WORKLOAD" | "BUDGET";
   severity: Severity;
@@ -94,31 +65,30 @@ export interface CommandCenterSummary {
   total_events: number;
   pending_approvals: number;
   critical_incidents: number;
-  open_incidents: number;
+  open_incidents?: number;
   overdue_tasks: number;
-  blocked_tasks: number;
-  unresponsive_speakers: number;
-  budget_remaining_inr: number;
-  budget_remaining_formatted: string;
-  attention_required: number;
+  blocked_tasks?: number;
+  unresponsive_speakers?: number;
+  budget_remaining_inr?: number;
+  budget_remaining_formatted?: string;
+  attention_required?: number;
 }
 
 export interface EventSummary {
   event_id: string;
   name: string;
   status: string;
-  start_date: string;
-  health_band: HealthBand;
-  health_score: number;
-  health_reasons: string[];
-  /** False when the figures are the cached band rather than a fresh aggregation. */
-  detailed: boolean;
-  pending_approvals?: number;
-  critical_incidents?: number;
+  start_date?: string;
+  health_band?: HealthBand;
+  health_score?: number;
+  health_reasons?: string[];
+  detailed?: boolean;
+  pending_approvals: number;
+  critical_incidents: number;
   open_incidents?: number;
-  overdue_tasks?: number;
-  blocked_tasks?: number;
-  total_tasks?: number;
+  overdue_tasks: number;
+  blocked_tasks: number;
+  total_tasks: number;
   completed_tasks?: number;
   teams?: number;
   speakers?: number;
@@ -131,10 +101,10 @@ export interface EventSummary {
 
 export interface CommandCenterData {
   organization_id: string;
-  role: Role;
+  role?: Role;
   summary: CommandCenterSummary;
   events: EventSummary[];
-  attention_items: AttentionItem[];
+  attention_items?: AttentionItem[];
   recent_actions: AuditEvent[];
 }
 
@@ -146,10 +116,6 @@ export interface AttentionResponse {
   high_count: number;
 }
 
-// ---------------------------------------------------------------------------
-// Operations brief
-// ---------------------------------------------------------------------------
-
 export interface OperationsBrief {
   event_id: string;
   event_name: string;
@@ -159,7 +125,6 @@ export interface OperationsBrief {
   health_reasons: string[];
   decisions_required: number;
   high_risk_items: number;
-  /** Open work that is neither late nor blocked — what the leader need not think about. */
   tasks_progressing: number;
   overdue_tasks: number;
   blocked_tasks: number;
@@ -186,27 +151,23 @@ export interface OperationsBrief {
   hours_until_start: number | null;
 }
 
-// ---------------------------------------------------------------------------
-// Teams, members, tasks
-// ---------------------------------------------------------------------------
-
-export interface TeamSummary {
+export interface Team {
   team_id: string;
   event_id: string;
   name: string;
-  lead_user_id: string;
-  lead_name: string;
-  member_count: number;
-  total_tasks: number;
-  open_tasks: number;
-  completed_tasks: number;
-  overdue_tasks: number;
-  blocked_tasks: number;
-  in_progress_tasks: number;
-  progress_percent: number;
-  workload_per_member: number;
-  /** Derived by the backend from the work the team is actually carrying. */
-  risk: "HIGH" | "MEDIUM" | "LOW";
+  is_active: boolean;
+  lead_user_id?: string;
+  lead_name?: string;
+  member_count?: number;
+  total_tasks?: number;
+  open_tasks?: number;
+  completed_tasks?: number;
+  overdue_tasks?: number;
+  blocked_tasks?: number;
+  in_progress_tasks?: number;
+  progress_percent?: number;
+  workload_per_member?: number;
+  risk?: "HIGH" | "MEDIUM" | "LOW";
 }
 
 export interface TeamMember {
@@ -217,20 +178,11 @@ export interface TeamMember {
   team_role: "LEAD" | "MEMBER";
   skills: string[];
   is_active: boolean;
-  active_task_count: number;
-  completed_task_count: number;
+  active_task_count?: number;
+  completed_task_count?: number;
 }
 
-export type TaskStatus =
-  | "BACKLOG"
-  | "PENDING"
-  | "ASSIGNED"
-  | "IN_PROGRESS"
-  | "BLOCKED"
-  | "REVIEW"
-  | "COMPLETED"
-  | "CANCELLED"
-  | "OVERDUE";
+export type TaskStatus = "BACKLOG" | "PENDING" | "ASSIGNED" | "IN_PROGRESS" | "BLOCKED" | "REVIEW" | "COMPLETED" | "CANCELLED" | "OVERDUE";
 
 export interface Task {
   task_id: string;
@@ -250,9 +202,8 @@ export interface Task {
   blocked_reason?: string;
   notes?: string;
   estimated_effort_hours?: number;
-  source_comment_id?: string | null;
-  source_incident_id?: string | null;
-  /** Derived server-side from due_date, never stored. */
+  source_comment_id?: string;
+  source_incident_id?: string;
   is_overdue?: boolean;
   hours_until_due?: number | null;
 }
@@ -273,29 +224,18 @@ export interface MemberWorkload {
   team_name?: string;
   open_tasks: number;
   overdue_tasks: number;
+  blocked_tasks?: number;
 }
 
 export interface WorkloadResponse {
   event_id: string;
-  teams: TeamSummary[];
+  teams: Team[];
   members: MemberWorkload[];
   busiest_member: MemberWorkload | null;
   most_available_member: MemberWorkload | null;
 }
 
-// ---------------------------------------------------------------------------
-// Speakers
-// ---------------------------------------------------------------------------
-
-export type SpeakerStatus =
-  | "IDENTIFIED"
-  | "INVITED"
-  | "AWAITING_RESPONSE"
-  | "FOLLOWUP_SENT"
-  | "CONFIRMED"
-  | "DECLINED"
-  | "CANCELLED"
-  | "BACKUP";
+export type SpeakerStatus = "IDENTIFIED" | "INVITED" | "AWAITING_RESPONSE" | "FOLLOWUP_SENT" | "CONFIRMED" | "DECLINED" | "CANCELLED" | "BACKUP";
 
 export interface Speaker {
   speaker_id: string;
@@ -313,21 +253,21 @@ export interface Speaker {
   max_followups?: number;
   travel_required: boolean;
   travel_origin?: string;
+  travel_details?: string;
   accommodation_required: boolean;
   accommodation_nights?: number;
+  accommodation_details?: string;
   estimated_travel_cost?: number;
   estimated_accommodation_cost?: number;
-  travel_details?: string;
-  accommodation_details?: string;
   special_requirements?: string;
   availability_notes?: string;
   availability_confirmed?: boolean;
-  slides_submitted: boolean;
+  slides_submitted?: boolean;
+  av_requirements?: string;
   is_backup: boolean;
-  /** Hours since last contact with no reply. Derived server-side. */
+  backup_for_speaker_id?: string;
   silent_hours?: number;
   needs_followup?: boolean;
-  followup_draft?: string;
 }
 
 export interface SpeakerListResponse {
@@ -347,19 +287,16 @@ export interface FollowupDraft {
   silent_hours: number;
   followup_count: number;
   draft: string;
-  /** Always false: sending is approval-gated, drafting is not. */
-  sent: boolean;
+  sent: false;
   message: string;
+  approval_id?: string;
+  status?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Attendees
-// ---------------------------------------------------------------------------
 
 export interface AttendeeException {
   registration_id: string;
   attendee_name: string;
-  ticket_type?: string;
+  ticket_type: string;
   nights?: string;
   arrival_date?: string;
 }
@@ -384,7 +321,7 @@ export interface AttendeeOpsResponse {
     expected_attendees: number;
     registration_target: number;
   };
-  funnel: { stage: string; count: number; detail: string }[];
+  funnel: Array<{ stage: string; count: number; detail: string }>;
   exceptions: {
     missing_dietary: AttendeeException[];
     missing_dietary_total: number;
@@ -395,24 +332,28 @@ export interface AttendeeOpsResponse {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Incidents
-// ---------------------------------------------------------------------------
+export type IncidentStatus = "OPEN" | "REPORTED" | "DETECTED" | "ACKNOWLEDGED" | "ANALYZING" | "RECOMMENDATION_READY" | "AWAITING_APPROVAL" | "APPROVED" | "EXECUTING" | "RESOLVED" | "REOPENED" | "CLOSED" | "REJECTED" | "ESCALATED";
+export type GenericIncidentStatus = Exclude<
+  IncidentStatus,
+  "RESOLVED" | "REOPENED" | "CLOSED" | "REJECTED" | "ESCALATED"
+>;
 
-export type IncidentStatus =
-  | "REPORTED"
-  | "DETECTED"
-  | "ACKNOWLEDGED"
-  | "ANALYZING"
-  | "RECOMMENDATION_READY"
-  | "AWAITING_APPROVAL"
-  | "APPROVED"
-  | "EXECUTING"
-  | "RESOLVED"
-  | "REOPENED"
-  | "CLOSED"
-  | "REJECTED"
-  | "ESCALATED";
+export type IncidentUpdateInput = Partial<
+  Omit<
+    Pick<
+      Incident,
+      | "title"
+      | "description"
+      | "severity"
+      | "status"
+      | "category"
+      | "assigned_to"
+      | "assigned_to_name"
+      | "team_id"
+    >,
+    "status"
+  >
+> & { readonly status?: GenericIncidentStatus };
 
 export interface Incident {
   incident_id: string;
@@ -426,21 +367,14 @@ export interface Incident {
   affected_resource_type: string;
   affected_resource_id: string;
   detected_at: string;
-  detected_by?: string;
-  reported_by?: string;
-  reported_by_name?: string;
-  reported_by_role?: string;
   assigned_to?: string;
   assigned_to_name?: string;
-  acknowledged_at?: string;
   impact_analysis?: string;
-  dependencies: string[];
+  dependencies?: string[];
   backup_options: string[];
   recommendation: string;
   evidence?: string;
-  approval_id?: string | null;
-  resolved_at?: string;
-  resolved_by?: string;
+  resolved_at?: string | null;
   resolution_summary?: string;
   root_cause?: string;
   actions_taken?: string[];
@@ -455,7 +389,6 @@ export interface IncidentComment {
   body: string;
   author_id: string;
   author_name: string;
-  /** Distinguishes the agent's analysis from a person's observation. */
   author_type: "user" | "agent" | "system";
   author_role?: string;
   team_id?: string;
@@ -463,6 +396,13 @@ export interface IncidentComment {
   created_task_id?: string | null;
   created_approval_id?: string | null;
   created_at: string;
+}
+
+export interface AddIncidentCommentResponse {
+  comment_id: string;
+  created_task_id: string | null;
+  created_approval_id?: string | null;
+  message: string;
 }
 
 export interface IncidentListResponse {
@@ -478,32 +418,31 @@ export interface IncidentDetailResponse {
   comment_count: number;
 }
 
-// ---------------------------------------------------------------------------
-// Approvals
-// ---------------------------------------------------------------------------
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | JsonObject;
+export interface JsonObject { readonly [key: string]: JsonValue; }
+export type ApprovalEvidence = JsonObject;
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "DECLINED" | "EXPIRED" | "EDITED";
-
 export interface Approval {
   approval_id: string;
   event_id: string;
   title: string;
   description: string;
   status: ApprovalStatus;
-  risk_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "NEVER";
+  risk_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   requested_action: string;
   reason: string;
-  evidence: Record<string, unknown>;
+  evidence: unknown;
   affected_resource_type: string;
   affected_resource_id: string;
   amount_inr?: number;
-  currency?: string;
+  currency?: "INR";
   budget_category?: string;
-  /** Human-readable effect, e.g. "Remaining 75,000 -> 62,500". Computed by the backend. */
   budget_impact?: string;
   requested_by?: string;
   requested_by_name?: string;
-  requested_by_role?: string;
+  requested_by_role?: Role;
   agent_name: string;
   agent_recommendation?: string;
   requested_at: string;
@@ -520,7 +459,6 @@ export interface ApprovalListResponse {
   pending_financial_exposure_inr: number;
 }
 
-/** What committing an amount would do. Same arithmetic the write path uses. */
 export interface BudgetProjection {
   category: string;
   amount_inr: number;
@@ -535,23 +473,6 @@ export interface BudgetProjection {
   impact_summary: string;
 }
 
-export interface ApprovalDetailResponse {
-  approval: Approval;
-  budget_projection: BudgetProjection | null;
-}
-
-/** The decision response carries the recomputed budget, so the UI displays rather than subtracts. */
-export interface ApprovalDecisionResponse {
-  approval_id: string;
-  status: ApprovalStatus;
-  message: string;
-  budget?: BudgetSummary;
-}
-
-// ---------------------------------------------------------------------------
-// Budget
-// ---------------------------------------------------------------------------
-
 export interface BudgetCategoryLine {
   category: string;
   allocated: number;
@@ -563,21 +484,31 @@ export interface BudgetCategoryLine {
 }
 
 export interface BudgetSummary {
-  event_id?: string;
-  currency: string;
+  event_id: string;
+  currency: "INR";
   total_budget: number;
   allocated: number;
   spent: number;
   committed: number;
-  /** total - spent - committed. Derived server-side on every read. */
   remaining: number;
   unallocated: number;
   utilization_percent: number;
   categories: BudgetCategoryLine[];
   exists: boolean;
-  total_budget_formatted?: string;
-  remaining_formatted?: string;
-  categories_available?: string[];
+  total_budget_formatted: string;
+  remaining_formatted: string;
+  categories_available: string[];
+}
+
+export interface ApprovalDetailResponse {
+  approval: Approval;
+  budget_projection: BudgetProjection | null;
+}
+export interface ApprovalDecisionResponse {
+  approval_id: string;
+  status: ApprovalStatus;
+  message: string;
+  budget?: BudgetSummary;
 }
 
 export interface Expense {
@@ -588,14 +519,10 @@ export interface Expense {
   description: string;
   status: string;
   vendor?: string;
-  approval_id?: string | null;
+  approval_id?: string;
   incurred_at?: string;
   recorded_by?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Audit
-// ---------------------------------------------------------------------------
 
 export interface AuditEvent {
   audit_id: string;
@@ -611,33 +538,20 @@ export interface AuditEvent {
   tool_used?: string;
   policy_evaluated?: string;
   approval_id?: string;
-  details?: Record<string, unknown>;
 }
 
-// ---------------------------------------------------------------------------
-// Agent
-// ---------------------------------------------------------------------------
-
-export interface AgentChatRequest {
-  message: string;
-  session_id?: string;
-  event_id?: string;
-  fun_mode?: boolean;
-}
-
+export interface AgentChatRequest { message: string; session_id?: string; event_id?: string; fun_mode?: boolean; }
+export interface AgentEvidence { tool: string; summary: string; }
 export interface AgentChatResponse {
   session_id: string;
   reply: string;
-  /** Which tools the answer relied on, so it can be checked. */
   tools_used: string[];
-  /** Approvals the turn raised. Non-empty means the agent prepared, not performed. */
   approvals_created: string[];
   turns_taken: number;
   latency_ms: number;
   truncated: boolean;
-  evidence: { tool: string; summary: string }[];
+  evidence: AgentEvidence[];
 }
-
 export interface AgentTool {
   name: string;
   description: string;
@@ -645,9 +559,8 @@ export interface AgentTool {
   risk_tier: "LOW" | "MEDIUM" | "HIGH" | "NEVER";
   requires_approval: boolean;
   mutating: boolean;
-  roles: string[];
+  roles: Role[];
 }
-
 export interface AgentCapabilities {
   role: Role;
   model_id: string;
@@ -656,11 +569,9 @@ export interface AgentCapabilities {
   tools: AgentTool[];
   automatic: string[];
   requires_approval: string[];
-  /** Tools this role does not receive, so the boundary is inspectable. */
   withheld_from_role: string[];
   notes: string[];
 }
-
 export interface AgentActivityEntry {
   audit_id: string;
   timestamp: string;
@@ -673,7 +584,6 @@ export interface AgentActivityEntry {
   outcome: string;
   summary: string;
 }
-
 export interface AgentActivityResponse {
   activity: AgentActivityEntry[];
   count: number;
@@ -681,47 +591,28 @@ export interface AgentActivityResponse {
   awaiting_approval_count: number;
 }
 
-// ---------------------------------------------------------------------------
-// Check-in
-// ---------------------------------------------------------------------------
-
 export interface Registration {
   registration_id: string;
   event_id: string;
   attendee_name: string;
   attendee_email: string;
   attendee_phone: string;
+  ticket_type: string;
   status: "CONFIRMED" | "PENDING" | "CANCELLED" | "WAITLISTED";
   payment_status: "CAPTURED" | "PENDING" | "FAILED" | "REFUNDED" | "NOT_REQUIRED";
-  ticket_type: string;
   is_checked_in: boolean;
 }
-
-export interface VerificationCheck {
-  name: string;
-  status: "PASS" | "FAIL" | "WARN";
-  message: string;
-}
-
-/**
- * One search hit.
- *
- * A single exact match returns the full registration. A name search that matched several
- * returns *candidates* — id, name, masked email and ticket type only — because the backend
- * deliberately withholds contact detail until the volunteer has identified the right person.
- * That is why every field but the identifier is optional here.
- */
 export interface RegistrationMatch {
   registration_id: string;
   attendee_name: string;
   attendee_email?: string;
-  attendee_phone?: string;
   ticket_type?: string;
   status?: Registration["status"];
   payment_status?: Registration["payment_status"];
   is_checked_in?: boolean;
 }
-
+export interface VerificationCheck { name: string; status: "PASS" | "FAIL" | "WARN"; message: string; }
+export interface VerifiedRegistration { attendee_name: string; ticket_type?: string; status: string; payment_status: string; }
 export interface SearchResult {
   found: boolean;
   count: number;
@@ -729,61 +620,39 @@ export interface SearchResult {
   requires_disambiguation?: boolean;
   message?: string;
 }
-
-/** What the volunteer sees after verification. The backend returns only these four fields. */
-export interface VerifiedRegistration {
-  attendee_name: string;
-  ticket_type: string;
-  status: string;
-  payment_status: string;
+export interface VerifyCheckinResponse {
+  registration_id: string;
+  verification: { all_passed: boolean; checks: VerificationCheck[] };
+  registration: VerifiedRegistration;
 }
-
+export interface TicketResult { ticket_id: string; registration_id: string; download_url: string; already_existed: boolean; message: string; }
+export interface CompleteCheckinResponse { registration_id: string; status: "CHECKED_IN"; checked_in_at: string; message: string; was_already_checked_in: boolean; }
 export interface ReconcileResult {
   reconciled: boolean;
-  message?: string;
+  message: string;
   registration_id?: string;
   registration?: VerifiedRegistration;
-  /** True when the attempt failed and an unresolved case was opened for manual follow-up. */
   recovery_case_created?: boolean;
 }
+export interface VerifyQrResponse { valid: true; registration_id: string; attendee_name: string; ticket_status: string; message: string; }
 
-export interface TicketResult {
-  ticket_id: string;
-  registration_id: string;
-  download_url: string;
-  already_existed: boolean;
-  message: string;
-}
-
-// ---------------------------------------------------------------------------
-// Notifications
-// ---------------------------------------------------------------------------
-
-export interface Notification {
-  notification_id: string;
-  user_id: string;
-  event_id: string;
-  type: string;
-  severity: "INFO" | "ATTENTION" | "WARNING" | "CRITICAL";
-  title: string;
-  body: string;
-  resource_type: string;
-  resource_id: string;
-  is_read: boolean;
-  created_at: string;
-}
-
-// ---------------------------------------------------------------------------
-// Demo session
-// ---------------------------------------------------------------------------
-
-/** Returned by POST /demo/session. Never contains a password. */
 export interface DemoSession {
   id_token: string;
   expires_in: number;
   email: string;
   organization_id: string;
-  role: Role;
-  is_demo: boolean;
+  role: "TEAM_MEMBER";
+  is_demo: true;
   message: string;
 }
+
+export interface SignedInUser {
+  userId: string;
+  email: string;
+  name: string;
+  role: Role;
+  organizations: string[];
+  isDemo: boolean;
+}
+
+export type StatusLevel = "healthy" | "attention" | "warning" | "critical" | "completed" | "awaiting_approval";

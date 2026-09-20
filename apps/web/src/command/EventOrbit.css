@@ -1,0 +1,298 @@
+/* ============================================================================
+ * EventOrbit — the Command Center's single contextual visual (design.md §8.1,
+ * requirements 4.4, 12.10).
+ *
+ * Every value here is a token from `src/styles/tokens.css`; the only literals
+ * are the breakpoint numbers inside `@media` preludes, which cannot read custom
+ * properties.
+ *
+ * Two rules this stylesheet keeps:
+ *
+ *   - **No state is mapped to a colour.** `StatusBadge` renders each node's
+ *     operational state in words and in colour (requirement 12.5). Here a node
+ *     that needs a person differs by ring weight and ring style, so the picture
+ *     reads the same in greyscale (requirement 15.10).
+ *   - **No autonomous motion unless the user allows it.** The one animation is
+ *     declared inside `prefers-reduced-motion: no-preference`, so under reduced
+ *     motion it does not exist rather than being overridden
+ *     (requirement 15.11).
+ *
+ * Geometry: the stage carries `data-count` and each slot its `data-slot`, and
+ * `calc` turns the pair into an angle. That is what keeps the layout driven by
+ * the real number of watched events without a single inline style
+ * (requirement 12.2).
+ * ==========================================================================*/
+
+.event-orbit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--card-pad);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.event-orbit__heading {
+  margin: 0;
+  font-size: var(--fs-card-title);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.event-orbit__empty,
+.event-orbit__alternative {
+  margin: 0;
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+/* --- The ring ------------------------------------------------------------ */
+
+.event-orbit__stage {
+  --orbit-stage: calc(var(--sp-16) * 6);
+  --orbit-radius: calc(var(--sp-16) * 2);
+  --orbit-node-w: calc(var(--sp-16) * 1.75);
+  --orbit-emphasis-w: calc(var(--border-w) * 2);
+  /* Overridden by the count rules below; six is the mid-range default. */
+  --orbit-step: calc(1turn / 6);
+
+  position: relative;
+  width: 100%;
+  max-width: var(--orbit-stage);
+  aspect-ratio: 1;
+  margin: var(--sp-4) auto;
+}
+
+/* One step per watched event, so the nodes spread evenly over the ring. */
+.event-orbit__stage[data-count="1"] { --orbit-step: 1turn; }
+.event-orbit__stage[data-count="2"] { --orbit-step: calc(1turn / 2); }
+.event-orbit__stage[data-count="3"] { --orbit-step: calc(1turn / 3); }
+.event-orbit__stage[data-count="4"] { --orbit-step: calc(1turn / 4); }
+.event-orbit__stage[data-count="5"] { --orbit-step: calc(1turn / 5); }
+.event-orbit__stage[data-count="6"] { --orbit-step: calc(1turn / 6); }
+.event-orbit__stage[data-count="7"] { --orbit-step: calc(1turn / 7); }
+.event-orbit__stage[data-count="8"] { --orbit-step: calc(1turn / 8); }
+.event-orbit__stage[data-count="9"] { --orbit-step: calc(1turn / 9); }
+.event-orbit__stage[data-count="10"] { --orbit-step: calc(1turn / 10); }
+.event-orbit__stage[data-count="11"] { --orbit-step: calc(1turn / 11); }
+.event-orbit__stage[data-count="12"] { --orbit-step: calc(1turn / 12); }
+
+/* Past six nodes the ring is busier, so each node takes less of it. */
+.event-orbit__stage[data-count="7"],
+.event-orbit__stage[data-count="8"],
+.event-orbit__stage[data-count="9"],
+.event-orbit__stage[data-count="10"],
+.event-orbit__stage[data-count="11"],
+.event-orbit__stage[data-count="12"] {
+  --orbit-node-w: calc(var(--sp-16) * 1.5);
+}
+
+.event-orbit__rings {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Stroke width is in the SVG's own user units, not pixels: the viewBox is
+   100 × 100 and the element scales with the stage. */
+.event-orbit__ring {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 0.4;
+}
+
+.event-orbit__hub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.event-orbit__hub-count {
+  font-size: var(--fs-display);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+
+.event-orbit__hub-label {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* --- Nodes -------------------------------------------------------------- */
+
+.event-orbit__slots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.event-orbit__slot {
+  --orbit-angle: calc(var(--orbit-step) * var(--orbit-slot, 0));
+
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--orbit-node-w);
+  /* Out to the radius at the slot's angle, then counter-rotated so the label
+     stays upright. */
+  transform: translate(-50%, -50%) rotate(var(--orbit-angle))
+    translateY(calc(-1 * var(--orbit-radius))) rotate(calc(-1 * var(--orbit-angle)));
+}
+
+.event-orbit__slot[data-slot="0"] { --orbit-slot: 0; }
+.event-orbit__slot[data-slot="1"] { --orbit-slot: 1; }
+.event-orbit__slot[data-slot="2"] { --orbit-slot: 2; }
+.event-orbit__slot[data-slot="3"] { --orbit-slot: 3; }
+.event-orbit__slot[data-slot="4"] { --orbit-slot: 4; }
+.event-orbit__slot[data-slot="5"] { --orbit-slot: 5; }
+.event-orbit__slot[data-slot="6"] { --orbit-slot: 6; }
+.event-orbit__slot[data-slot="7"] { --orbit-slot: 7; }
+.event-orbit__slot[data-slot="8"] { --orbit-slot: 8; }
+.event-orbit__slot[data-slot="9"] { --orbit-slot: 9; }
+.event-orbit__slot[data-slot="10"] { --orbit-slot: 10; }
+.event-orbit__slot[data-slot="11"] { --orbit-slot: 11; }
+
+.event-orbit__node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  min-height: var(--control-h);
+  padding: var(--sp-2);
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.event-orbit__node:hover {
+  box-shadow: var(--shadow-raised);
+}
+
+/* The event the console is scoped to: a stronger boundary, and `aria-current`
+   says the same thing to a screen reader. */
+.event-orbit__node[aria-current="true"] {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+/* Weight and style, never hue (requirement 12.5). */
+.event-orbit__node[data-state="NEEDS_DECISION"] {
+  border-width: var(--orbit-emphasis-w);
+  border-color: var(--border-strong);
+}
+
+.event-orbit__node[data-state="CANNOT_BE_AUTOMATED"] {
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+
+.event-orbit__node-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-semibold);
+}
+
+/* --- The text alternative ---------------------------------------------- */
+
+.event-orbit__readout {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.event-orbit__readout-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: var(--border-w) solid var(--border);
+  font-size: var(--fs-support);
+}
+
+.event-orbit__readout-item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.event-orbit__readout-name {
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.event-orbit__readout-counts {
+  color: var(--text-secondary);
+}
+
+/* --- Motion ------------------------------------------------------------- */
+
+/* Declared only where motion is welcome, so under `prefers-reduced-motion:
+   reduce` there is no animation to suppress (requirement 15.11). */
+@media (prefers-reduced-motion: no-preference) {
+  .event-orbit__node[data-state="NEEDS_DECISION"]::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--sp-1));
+    border: var(--border-w) solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    animation: event-orbit-pulse 2.6s ease-in-out infinite;
+  }
+
+  @keyframes event-orbit-pulse {
+    0%,
+    100% {
+      opacity: 0.15;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
+}
+
+/* --- Responsive --------------------------------------------------------- */
+
+/* Below --bp-md (900px): interactive targets hold at --touch-min
+   (requirement 14.6). Media queries cannot read custom properties, so the
+   breakpoint numbers repeat the token values. */
+@media (max-width: 899px) {
+  .event-orbit__node {
+    min-height: var(--touch-min);
+  }
+}
+
+/* Below --bp-sm (640px): a smaller ring, so the stage never forces the page
+   to scroll sideways (requirement 14.7). */
+@media (max-width: 639px) {
+  .event-orbit__stage {
+    --orbit-stage: calc(var(--sp-16) * 4.5);
+    --orbit-radius: calc(var(--sp-16) * 1.5);
+    --orbit-node-w: calc(var(--sp-16) * 1.5);
+  }
+}

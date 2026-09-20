@@ -1,0 +1,426 @@
+/* ============================================================================
+ * Sidebar — the navigation contents inside the shell's `<nav>` landmark
+ * (design.md §7.2, requirements 3.2, 3.3, 3.4, 3.6, 14.2).
+ *
+ * Scope boundary: `AppShell` owns the nav region's width (`--nav-w`,
+ * `--nav-w-collapsed`, `--nav-panel-w`), surface and right divider. Nothing here
+ * restates them, so the frame stays defined in one file. The class prefix is
+ * `side-nav` rather than `sidebar` on purpose — `.sidebar*` still belongs to the
+ * legacy shell in `index.css`, and the two must not collide while both exist.
+ *
+ * Every value comes from `src/styles/tokens.css`. No colour, size, radius,
+ * spacing or weight literal appears below, and the global `:focus-visible` ring
+ * from `index.css` is deliberately not restated or weakened.
+ * ==========================================================================*/
+
+.side-nav {
+  /* Fills the height of the shell's nav region, so the account block can sit at
+     the bottom without any fixed positioning. */
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  /* Lets a long email wrap instead of widening the region. */
+  min-width: 0;
+  padding-block: var(--sp-6);
+}
+
+/* --- Wordmark -------------------------------------------------------------*/
+.side-nav__wordmark {
+  padding-inline: var(--sp-4);
+  color: var(--brand);
+  font-size: var(--fs-section);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-display);
+}
+
+/* The rail's stand-in for the name. Absent at every width but the icon rail, so
+   the full wordmark is what reads normally. */
+.side-nav__wordmark-mark {
+  display: none;
+}
+
+/* --- Groups ---------------------------------------------------------------*/
+.side-nav__groups {
+  /* Takes the slack, which is what pushes the account block down. */
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  min-width: 0;
+}
+
+.side-nav__group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Group labels are static text, not controls and not collapsible
+   (design.md §7.2). The letter-spacing carries the label treatment; there is no
+   `text-transform`, because the config already holds the upper-case text. */
+.side-nav__group-label {
+  padding: 0 var(--sp-4) var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-caps);
+}
+
+.side-nav__list {
+  list-style: none;
+}
+
+/* --- Entries --------------------------------------------------------------*/
+.side-nav__link {
+  /* Positioning context for the rail's floating label. */
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  /* Full-height row, so the whole entry is the target rather than the text. */
+  min-height: var(--control-h);
+  padding: var(--sp-2) var(--sp-4);
+  /* Reserved on every entry so the active rule does not shift the label. */
+  border-left: var(--sp-1) solid transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.side-nav__link:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+/* The active treatment (requirement 3.3). Three cues, only one of which is
+   colour: a heavier weight, a left rule and a surface tint. That is what keeps
+   the current entry identifiable without colour perception
+   (requirement 15.10). */
+.side-nav__link--active,
+.side-nav__link--active:hover {
+  background: var(--bg-subtle);
+  border-left-color: var(--brand);
+  color: var(--brand-strong);
+  font-weight: var(--fw-semibold);
+}
+
+/* An event-scoped entry while the organization has no event
+   (requirement 3.10). Muted, with no hover response and no left rule, so it
+   reads as present but not openable — and the "Needs an event" note beside the
+   label carries the reason in text rather than in the colour
+   (requirement 15.10). It is not a link, so there is no focus state to define.
+   The reserved left border stays transparent, keeping the label on the same
+   baseline as every other entry. */
+.side-nav__link--disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* The monogram. Absent except on the icon rail, where the stylesheet supplies
+   its glyph from `data-nav-icon`. Empty in the DOM and `aria-hidden`, so it adds
+   nothing to the entry's accessible name. */
+.side-nav__link-icon {
+  display: none;
+}
+
+/* Label and, where there is one, the reason the entry cannot be opened. Grouped
+   in one element so the icon rail can move both into the floating label at once
+   rather than dropping the reason (requirement 15.10). */
+.side-nav__link-text {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.side-nav__link-note {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.side-nav__link-label {
+  min-width: 0;
+}
+
+/* --- Pending-approval badge ----------------------------------------------
+ * Amber because it marks work waiting on a person, never decoration
+ * (design.md §6.4). The number is the signal; the colour reinforces it. */
+.side-nav__badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--sp-6);
+  padding: 0 var(--sp-2);
+  border: var(--border-w) solid var(--attention);
+  border-radius: var(--radius-pill);
+  background: var(--attention-soft);
+  color: var(--attention);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  /* Keeps a one- and two-digit count the same optical width. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* What the count means, announced but not drawn. Clipped rather than hidden
+   with `display: none` or `visibility: hidden`, either of which would remove it
+   from the accessibility tree too. `--border-w` is the smallest length token in
+   the scale and stands in for the classic 1px clip box; it is a mechanism, not
+   a visual value. */
+.side-nav__badge-context {
+  position: absolute;
+  width: var(--border-w);
+  height: var(--border-w);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- Account block --------------------------------------------------------
+ * Name, email, active organization. No role: there is no role claim to read
+ * (requirement 3.6, A2). */
+.side-nav__account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-inline: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: var(--border-w) solid var(--border);
+  min-width: 0;
+}
+
+.side-nav__account-name {
+  color: var(--text-primary);
+  font-size: var(--fs-support);
+  font-weight: var(--fw-medium);
+}
+
+.side-nav__account-email,
+.side-nav__account-org {
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+  /* An address or identifier long enough to overflow breaks rather than
+     widening the nav region (requirement 14.7). */
+  overflow-wrap: anywhere;
+}
+
+/* ===========================================================================
+ * --bp-md (900px) to --bp-lg (1200px) — the icon rail (requirement 14.2).
+ *
+ * The column narrows to `--nav-w-collapsed` in `AppShell.css`; the contents
+ * become a monogram per entry, with the full label appearing beside the rail on
+ * hover and on keyboard focus.
+ *
+ * Nothing is removed from the accessibility tree to achieve this. The label is
+ * moved and faded, never `display: none` or `visibility: hidden`, so it remains
+ * each entry's accessible name at this width exactly as it is at every other
+ * one. Media queries cannot read custom properties, so the breakpoints repeat
+ * the `--bp-md` and `--bp-lg` values.
+ * ========================================================================= */
+@media (min-width: 900px) and (max-width: 1199px) {
+  .side-nav {
+    align-items: center;
+    padding-inline: var(--sp-2);
+  }
+
+  /* The wordmark becomes its mark. The name is clipped rather than hidden, so
+     the product name stays in the document at every width (requirement 3.1). */
+  .side-nav__wordmark {
+    padding-inline: 0;
+  }
+
+  .side-nav__wordmark-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-min);
+    height: var(--touch-min);
+    border-radius: var(--radius-md);
+    background: var(--brand-soft);
+    font-size: var(--fs-card-title);
+  }
+
+  .side-nav__wordmark-mark::before {
+    content: "CO";
+  }
+
+  .side-nav__wordmark-name,
+  .side-nav__group-label {
+    position: absolute;
+    width: var(--border-w);
+    height: var(--border-w);
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .side-nav__groups,
+  .side-nav__group,
+  .side-nav__list {
+    align-self: stretch;
+  }
+
+  /* A rule where the group label used to be, so the three groups are still
+     three groups on the rail. The first group has no label above it and needs
+     no rule. */
+  .side-nav__group + .side-nav__group {
+    padding-top: var(--sp-4);
+    border-top: var(--border-w) solid var(--border);
+  }
+
+  .side-nav__link {
+    justify-content: center;
+    min-height: var(--touch-min);
+    padding: var(--sp-2);
+    /* The left rule would crowd a centred monogram, so the active treatment
+       moves to the bottom edge below. */
+    border-left: none;
+    border-bottom: var(--sp-1) solid transparent;
+  }
+
+  .side-nav__link--active,
+  .side-nav__link--active:hover {
+    border-bottom-color: var(--brand);
+  }
+
+  .side-nav__link-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--sp-6);
+    font-size: var(--fs-support);
+    font-weight: var(--fw-semibold);
+    letter-spacing: var(--ls-label);
+  }
+
+  /* One rule per entry, and a fallback so a new nav entry shows a mark rather
+     than an empty rail slot. The glyphs are letters from the product's one UI
+     font, not decorative iconography (design.md §6.3). */
+  .side-nav__link-icon::before {
+    content: "·";
+  }
+
+  .side-nav__link-icon[data-nav-icon="command-center"]::before {
+    content: "CC";
+  }
+
+  .side-nav__link-icon[data-nav-icon="speaker-ops"]::before {
+    content: "SP";
+  }
+
+  .side-nav__link-icon[data-nav-icon="team-ops"]::before {
+    content: "TM";
+  }
+
+  .side-nav__link-icon[data-nav-icon="attendee-ops"]::before {
+    content: "AT";
+  }
+
+  .side-nav__link-icon[data-nav-icon="incident-ops"]::before {
+    content: "IN";
+  }
+
+  .side-nav__link-icon[data-nav-icon="checkin"]::before {
+    content: "CI";
+  }
+
+  .side-nav__link-icon[data-nav-icon="approvals"]::before {
+    content: "AP";
+  }
+
+  .side-nav__link-icon[data-nav-icon="budget"]::before {
+    content: "BU";
+  }
+
+  .side-nav__link-icon[data-nav-icon="agent"]::before {
+    content: "AG";
+  }
+
+  .side-nav__link-icon[data-nav-icon="audit-log"]::before {
+    content: "AU";
+  }
+
+  /* The floating label. Faded and click-through at rest, drawn beside the rail
+     on hover and on `:focus-visible`, which is what requirement 14.2 asks for.
+     `opacity` rather than `visibility`, so the text never leaves the
+     accessibility tree. */
+  .side-nav__link-text {
+    position: absolute;
+    left: 100%;
+    z-index: var(--z-sticky);
+    flex: 0 0 auto;
+    gap: var(--sp-3);
+    margin-left: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border: var(--border-w) solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-raised);
+    color: var(--text-primary);
+    font-size: var(--fs-support);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+
+  .side-nav__link:hover .side-nav__link-text,
+  .side-nav__link:focus-visible .side-nav__link-text {
+    opacity: 1;
+  }
+
+  /* The count stays on the rail: it is the one thing on this navigation that
+     reports work waiting on a person, and hiding it behind hover would hide
+     that. Positioned so it does not push the monogram off centre. */
+  .side-nav__badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+
+  /* The account block's three lines do not fit the rail. The name is kept as
+     the one identity line, and the email and organization return with the full
+     column — they are never the only place a value appears. */
+  .side-nav__account {
+    align-self: stretch;
+    margin-inline: var(--sp-1);
+    text-align: center;
+  }
+
+  .side-nav__account-email,
+  .side-nav__account-org {
+    display: none;
+  }
+}
+
+/* --- Below --bp-md (900px) -------------------------------------------------
+ * The navigation is the shell's full-height menu panel, so the contents read as
+ * the full column again — labels, groups and the whole account block — with
+ * tighter vertical rhythm and targets at the touch minimum (requirements 14.3,
+ * 14.6). Media queries cannot read custom properties, so the breakpoint repeats
+ * the `--bp-md` value. */
+@media (max-width: 899px) {
+  .side-nav {
+    gap: var(--sp-4);
+    padding-block: var(--sp-4);
+  }
+
+  .side-nav__groups {
+    gap: var(--sp-4);
+  }
+
+  .side-nav__link {
+    min-height: var(--touch-min);
+  }
+}

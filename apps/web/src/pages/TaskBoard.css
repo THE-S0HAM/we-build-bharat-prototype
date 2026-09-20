@@ -1,0 +1,271 @@
+/* ============================================================================
+ * TeamOps — page-scoped rules for the team-first board (design.md §8.3).
+ *
+ * Every value is a token from `src/styles/tokens.css`. No hex colour, no raw
+ * pixel size, no colour function (requirement 12.1, design.md §6.3).
+ *
+ * The page's contextual visual is the shared `DistributionBar` and its drawer
+ * form is the shared `.form-*` family in `src/index.css`, so neither the bar's
+ * geometry nor the form's rhythm is stated here. What is left is this page's own:
+ * the "Team directory unavailable" surface, the seven segment fills and their
+ * hatches, the team cards, and the task rows in the drawer.
+ *
+ * Status colour is `StatusBadge`'s alone (requirement 12.5). Nothing here tints
+ * a count or a card by state: the two states that need emphasis — blocked and
+ * overdue — are marked with weight and with a pattern, and both always carry
+ * their own word (requirements 7.6, 15.10).
+ *
+ * Contrast, from the pairings verified in `tokens.css` (WCAG AA, 4.5:1):
+ *   --text-secondary on --bg-surface 7.87   --text-muted on --bg-surface 5.57
+ *   --attention on --bg-surface 5.43        --text-primary on --bg-surface 15.52
+ * ==========================================================================*/
+
+/* --- "Team directory unavailable" (requirement 7.3, A5) ------------------ */
+
+.team-unavailable {
+  background: var(--bg-surface);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--card-pad);
+  max-width: var(--content-max);
+}
+
+.team-unavailable__title {
+  font-size: var(--fs-section);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-3);
+}
+
+.team-unavailable__line {
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  max-width: calc(var(--sp-16) * 11);
+}
+
+.team-unavailable__line + .team-unavailable__line {
+  margin-top: var(--sp-3);
+}
+
+/* --- Where the work stands: the page's one contextual visual ---------------
+ * Requirement 12.10. The frame, the bar geometry, the legend rhythm and the
+ * sentence are `DistributionBar`'s; the seven fills below are this page's,
+ * because "blocked / overdue / in progress / not started / completed /
+ * cancelled / state unavailable" is this page's vocabulary.
+ *
+ * Scoped under `.team-ops` so these fills reach this page's bar and no other's,
+ * and so they outrank `DistributionBar.css`'s neutral defaults on specificity
+ * rather than on import order. Each rule sets both properties because the bar
+ * segment is an SVG `<rect>`, which takes `fill`, and the legend swatch is a
+ * `<span>`, which takes `background`.
+ *
+ * Blocked and overdue are the exception: the bar segment takes a hatch pattern
+ * through the `fill` attribute the component sets, and the swatch repeats that
+ * texture as a gradient, so the two states a person has to act on are told apart
+ * by pattern as well as by their own word.
+ * ------------------------------------------------------------------------- */
+
+.team-ops .distribution__segment[data-segment="in-progress"],
+.team-ops .distribution__swatch[data-segment="in-progress"] {
+  fill: var(--brand-soft);
+  background: var(--brand-soft);
+}
+
+.team-ops .distribution__segment[data-segment="completed"],
+.team-ops .distribution__swatch[data-segment="completed"] {
+  fill: var(--brand);
+  background: var(--brand);
+}
+
+.team-ops .distribution__segment[data-segment="pending"],
+.team-ops .distribution__swatch[data-segment="pending"] {
+  fill: var(--bg-subtle);
+  background: var(--bg-subtle);
+}
+
+.team-ops .distribution__segment[data-segment="cancelled"],
+.team-ops .distribution__segment[data-segment="unrecognised"],
+.team-ops .distribution__swatch[data-segment="cancelled"],
+.team-ops .distribution__swatch[data-segment="unrecognised"] {
+  fill: var(--border);
+  background: var(--border);
+}
+
+.team-ops .distribution__swatch[data-segment="overdue"] {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--attention) 0 12%,
+    var(--attention-soft) 12% 24%
+  );
+}
+
+.team-ops .distribution__swatch[data-segment="blocked"] {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--border-strong) 0 12%,
+    var(--bg-subtle) 12% 24%
+  );
+}
+
+/* Hatch tiles for the two states a person has to act on. */
+.team-hatch__field[data-segment="blocked"] {
+  fill: var(--bg-subtle);
+}
+
+.team-hatch__line[data-segment="blocked"] {
+  fill: var(--border-strong);
+}
+
+.team-hatch__field[data-segment="overdue"] {
+  fill: var(--attention-soft);
+}
+
+.team-hatch__line[data-segment="overdue"] {
+  fill: var(--attention);
+}
+
+/* --- Team cards, ordered by attention needed (requirement 7.4) ----------- */
+
+.team-cards {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--sp-16) * 5), 1fr));
+  gap: var(--sp-4);
+}
+
+.team-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.team-card__name {
+  font-size: var(--fs-card-title);
+  color: var(--text-primary);
+}
+
+.team-card__note {
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+
+.team-card__sentence {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-4);
+}
+
+.team-card__counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--sp-16) * 1.2), 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.team-card__count dt {
+  font-size: var(--fs-label);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
+
+.team-card__count dd {
+  font-size: var(--fs-section);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Blocked and overdue lead with weight, beside a word that names them. The
+   amber is reinforcement, never the signal (requirement 15.10). */
+.team-card__count[data-attention="true"] dt {
+  color: var(--attention);
+  font-weight: var(--fw-semibold);
+}
+
+/* --- The team task drawer (requirements 7.5, 7.7, 7.8) -------------------
+ * The change form inside a task row is the shared `.form-*` family; only the
+ * rows themselves are this page's. */
+
+.team-tasks {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.team-task {
+  border-bottom: var(--border-w) solid var(--border);
+  padding-bottom: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+.team-task:last-child {
+  border-bottom: none;
+}
+
+.team-task__title {
+  font-size: var(--fs-card-title);
+  color: var(--text-primary);
+}
+
+/* Priority is a ranking, so the treatment is weight only: no fill, no border,
+   no colour. `CRITICAL` and `HIGH` carry the weight the ladder gives them. */
+.team-task__priority {
+  font-size: var(--fs-meta);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  color: var(--text-secondary);
+}
+
+.team-task__priority[data-priority="CRITICAL"],
+.team-task__priority[data-priority="HIGH"] {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.team-task__facts {
+  display: grid;
+  gap: var(--sp-1);
+  width: 100%;
+}
+
+.team-task__fact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  font-size: var(--fs-support);
+}
+
+.team-task__fact dt {
+  color: var(--text-secondary);
+  min-width: calc(var(--sp-16) * 1.2);
+}
+
+.team-task__fact dd {
+  color: var(--text-primary);
+}
+
+.team-task__relationship,
+.team-task__note {
+  font-size: var(--fs-support);
+  color: var(--text-secondary);
+}
+
+/* The only form in the product that is nested inside a list row rather than
+   opened as its own drawer section, so it carries the boxing `.drawer-section`'s
+   top rule gives the other two. The fieldset inside it stays the shared
+   borderless `.form-fields`. */
+.team-task__form {
+  width: 100%;
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+}

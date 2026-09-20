@@ -1,0 +1,82 @@
+/* ============================================================================
+ * StatusBadge — the visual half of the design.md §6.4 state table.
+ *
+ * Imported by `StatusBadge.tsx` only. Every value is a token from
+ * `src/styles/tokens.css`: no hex colour, no raw pixel size (design.md §6.3).
+ *
+ * The dot takes its colour from `currentColor`, so each tone sets exactly one
+ * colour and the dot can never drift away from its label.
+ *
+ * Contrast, read from the pairings verified in `tokens.css` (WCAG AA, 4.5:1):
+ *   --text-secondary on --bg-page 7.42, --bg-surface 7.87, --bg-subtle 6.80
+ *   --text-muted     on --bg-subtle 4.81
+ *   --attention      on --attention-soft 4.85
+ * ==========================================================================*/
+
+/* Wrapper used only when a `detail` sentence accompanies the pill — §6.4 asks
+ * for the blocking reason (Blocked) and the relative age (Overdue) inline. */
+.status-badge-row {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: var(--border-w) solid transparent;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+  white-space: nowrap;
+}
+
+/* Supplementary marker. The label carries the meaning (requirements 12.9, 15.10). */
+.status-badge__dot {
+  flex: none;
+  width: var(--sp-2);
+  height: var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+.status-badge__detail {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+/* Handled — §6.4 row 1: --text-secondary text, neutral dot, no fill. Deliberately
+ * not a green badge: §1.1 rules out celebratory treatment for normal progress. */
+.status-badge--handled {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+/* Needs your decision (row 2) and Overdue (row 7): --attention-soft tint with the
+ * restrained amber. The only tone in this component that asks for attention. */
+.status-badge--attention {
+  background: var(--attention-soft);
+  border-color: var(--attention);
+  color: var(--attention);
+}
+
+/* Cannot be automated (row 3) and Blocked (row 6): neutral surface, --border-strong.
+ * Present and legible, but never dressed as an alarm. */
+.status-badge--blocked {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+/* Completed — §6.4 row 8: --text-muted pill, lowest visual weight on the page.
+ * Also carries the other terminal statuses (Cancelled, Declined, Refunded). */
+.status-badge--muted {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--text-muted);
+}

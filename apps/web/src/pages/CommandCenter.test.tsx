@@ -1,219 +1,538 @@
 /**
- * Tests for the Command Center.
+ * Command Center behaviour (requirements 4.1–4.9, 13.1, 13.3, 13.8, design.md
+ * §21.3 "Command Center").
  *
- * The page exists to answer one question — does anything actually need me — so the tests are about
- * that answer being correct and unambiguous in each of the three states:
+ * The page is judged by what a community leader can do with it in five seconds,
+ * so every test here is a statement about the rendered screen rather than about
+ * a call: the greeting, one decision surface, the visual over the *watched*
+ * events, the handled strip, and the calm sentence when there is nothing to
+ * decide.
  *
- *   - nothing needs the leader
- *   - a decision is waiting
- *   - something needs attention but no decision is waiting
- *
- * The third is the easiest to get wrong and the most damaging: a page that shows no decision card
- * and says nothing else reads as "all clear" while two incidents sit open.
- *
- * The financial figures in the dominant decision come from the backend's own projection, so the
- * fixture reports 75,000 → 62,500 and the test asserts both appear. Nothing here is subtracted in
- * the browser.
+ * Only two boundaries are stubbed — `src/api.ts` and the Cognito token read. The
+ * real `DecisionCard`, `ApprovalActions`, `EventOrbit`, `AgentStatus`, `Drawer`,
+ * `StatusBadge`, `Timeline`, `EmptyState` and `ApiErrorState` all render, because
+ * the requirements are about what those components produce together.
  */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "../api";
-import { AGENT_ACTIVITY, APPROVAL_DETAIL, COMMAND_CENTER, EVENT_ID } from "../test/fixtures";
-import type { CommandCenterData } from "../types";
+import {
+  CALM_DESCRIPTION,
+  CALM_TITLE,
+  HANDLED_HEADING,
+  LOADING_LABEL,
+  ORBIT_HEADING,
+  ORG_WIDE_HEADING,
+} from "../command/commandView";
+import { EventContext, type EventContextValue } from "../event/eventContext";
+import { SessionContext, type SessionValue } from "../session/sessionContext";
+import type { Approval, AuditEvent, CommandCenterData, Event } from "../types";
+import { CommandCenter } from "./CommandCenter";
 
-const getCommandCenter = vi.fn();
-const getAgentActivity = vi.fn();
-const getApproval = vi.fn();
+const api = vi.hoisted(() => ({
+  getCommandCenter: vi.fn(),
+  getApprovals: vi.fn(),
+  getAuditLog: vi.fn(),
+  getAttention: vi.fn(),
+  decideApproval: vi.fn(),
+}));
 
-vi.mock("../api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../api")>();
-  return {
-    ...actual,
-    getCommandCenter: (...args: unknown[]) => getCommandCenter(...args),
-    getAgentActivity: (...args: unknown[]) => getAgentActivity(...args),
-    getApproval: (...args: unknown[]) => getApproval(...args),
+const cognito = vi.hoisted(() => ({ idToken: null as string | null }));
+
+vi.mock("../api", () => ({
+  getCommandCenter: api.getCommandCenter,
+  getApprovals: api.getApprovals,
+  getAuditLog: api.getAuditLog,
+  getAttention: api.getAttention,
+  decideApproval: api.decideApproval,
+  isMockMode: false,
+}));
+
+vi.mock("../auth", () => ({
+  getIdToken: () => Promise.resolve(cognito.idToken),
+}));
+
+/* --- Fixtures ------------------------------------------------------------- */
+
+/** A token payload, base64url encoded the way Cognito issues one. */
+function idToken(claims: Record<string, unknown>): string {
+  const payload = btoa(JSON.stringify(claims))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  return `header.${payload}.signature`;
+}
+
+const ACTIVE_EVENT: Event = {
+  event_id: "EVT-devcon-2026",
+  name: "DevCon Bengaluru 2026",
+  description: "The largest developer conference in South India",
+  status: "ACTIVE",
+  venue: "NIMHANS Convention Centre",
+  city: "Bengaluru",
+  start_date: "2026-10-15T09:00:00Z",
+  end_date: "2026-10-15T18:00:00Z",
+  expected_attendees: 500,
+  registration_open: true,
+  tags: [],
+};
+
+/**
+ * Three watched events, two "active" in the summary and five events in the
+ * organization. The three numbers are deliberately different, so a test can tell
+ * which one the headline used (A13).
+ */
+const OVERVIEW: CommandCenterData = {
+  organization_id: "ORG-wemakedev",
+  summary: {
+    active_events: 2,
+    total_events: 5,
+    pending_approvals: 2,
+    critical_incidents: 1,
+    overdue_tasks: 2,
+  },
+  events: [
+    {
+      event_id: "EVT-devcon-2026",
+      name: "DevCon Bengaluru 2026",
+      status: "ACTIVE",
+      pending_approvals: 2,
+      critical_incidents: 1,
+      overdue_tasks: 2,
+      blocked_tasks: 1,
+      total_tasks: 9,
+    },
+    {
+      event_id: "EVT-meetup",
+      name: "Pune Community Meetup",
+      status: "PUBLISHED",
+      pending_approvals: 0,
+      critical_incidents: 0,
+      overdue_tasks: 0,
+      blocked_tasks: 0,
+      total_tasks: 4,
+    },
+    {
+      event_id: "EVT-summit",
+      name: "Hyderabad Summit",
+      status: "PUBLISHED",
+      pending_approvals: 0,
+      critical_incidents: 0,
+      overdue_tasks: 1,
+      blocked_tasks: 0,
+      total_tasks: 6,
+    },
+  ],
+  recent_actions: [
+    {
+      audit_id: "AUD-org-1",
+      organization_id: "ORG-wemakedev",
+      event_id: "EVT-meetup",
+      timestamp: "2026-10-02T08:00:00Z",
+      action: "INCIDENT_DETECTED",
+      actor_type: "agent",
+      actor_id: "IncidentOps",
+      resource_type: "Incident",
+      resource_id: "INC-044",
+      outcome: "success",
+    },
+    {
+      audit_id: "AUD-org-2",
+      organization_id: "ORG-wemakedev",
+      event_id: "EVT-summit",
+      timestamp: "2026-10-02T07:00:00Z",
+      action: "TASK_CREATED",
+      actor_type: "user",
+      actor_id: "organiser-002",
+      resource_type: "Task",
+      resource_id: "TSK-091",
+      outcome: "success",
+    },
+  ],
+};
+
+/** Every watched event calm: no approval, no incident, no overdue task. */
+const CALM_OVERVIEW: CommandCenterData = {
+  ...OVERVIEW,
+  summary: { ...OVERVIEW.summary, pending_approvals: 0, critical_incidents: 0, overdue_tasks: 0 },
+  events: OVERVIEW.events.map((event) => ({
+    ...event,
+    pending_approvals: 0,
+    critical_incidents: 0,
+    overdue_tasks: 0,
+  })),
+};
+
+const OLDEST: Approval = {
+  approval_id: "APR-002",
+  event_id: "EVT-devcon-2026",
+  title: "Send 3rd follow-up to Raj Malhotra",
+  description: "SpeakerOps wants to send a 3rd follow-up to Raj Malhotra.",
+  status: "PENDING",
+  risk_level: "MEDIUM",
+  requested_action: "SEND_SPEAKER_FOLLOWUP",
+  reason: "Follow-up count exceeds the auto-send threshold",
+  evidence: { speaker_id: "SPK-002", followup_count: 2 },
+  affected_resource_type: "Speaker",
+  affected_resource_id: "SPK-002",
+  agent_name: "SpeakerOps",
+  requested_at: "2026-10-01T09:00:00Z",
+};
+
+const NEWER: Approval = {
+  ...OLDEST,
+  approval_id: "APR-001",
+  title: "Replace cancelled speaker with backup",
+  requested_action: "RESOLVE_INCIDENT",
+  reason: "Speaker cancellation — backup available",
+  evidence: { incident_id: "INC-001", backup_speaker: "SPK-005" },
+  affected_resource_type: "Incident",
+  affected_resource_id: "INC-001",
+  agent_name: "IncidentOps",
+  requested_at: "2026-10-03T09:00:00Z",
+};
+
+/** The active event's audit: one agent action, one person's. */
+const EVENT_AUDIT: AuditEvent[] = [
+  {
+    audit_id: "AUD-1",
+    organization_id: "ORG-wemakedev",
+    event_id: "EVT-devcon-2026",
+    timestamp: "2026-10-02T09:00:00Z",
+    action: "SPEAKER_FOLLOWUP_SENT",
+    actor_type: "agent",
+    actor_id: "SpeakerOps",
+    resource_type: "Speaker",
+    resource_id: "SPK-002",
+    outcome: "success",
+    tool_used: "send_speaker_invite",
+  },
+  {
+    audit_id: "AUD-2",
+    organization_id: "ORG-wemakedev",
+    event_id: "EVT-devcon-2026",
+    timestamp: "2026-10-02T08:30:00Z",
+    action: "CHECKIN_COMPLETED",
+    actor_type: "user",
+    actor_id: "volunteer-001",
+    resource_type: "CheckIn",
+    resource_id: "REG-2026-004829",
+    outcome: "success",
+  },
+];
+
+/* --- Harness -------------------------------------------------------------- */
+
+const setActiveEvent = vi.fn<(eventId: string) => boolean>();
+const signOut = vi.fn();
+
+function renderCommandCenter(): void {
+  const session: SessionValue = {
+    status: "authenticated",
+    user: {
+      userId: "user-1",
+      email: "priya@example.org",
+      name: "Priya Sharma",
+      role: "LEADER",
+      organizations: ["ORG-wemakedev"],
+      isDemo: false,
+    },
+    activeOrganizationId: "ORG-wemakedev",
+    refresh: () => Promise.resolve(),
+    signOut,
   };
-});
 
-const { CommandCenter } = await import("./CommandCenter");
+  const events: EventContextValue = {
+    status: "ready",
+    activeEvent: ACTIVE_EVENT,
+    activeEventId: ACTIVE_EVENT.event_id,
+    events: [ACTIVE_EVENT],
+    source: "active",
+    error: null,
+    setActiveEvent,
+    refresh: () => undefined,
+  };
 
-function renderPage(role: "LEADER" | "TEAM_MEMBER" = "LEADER") {
-  return render(
+  render(
     <MemoryRouter>
-      <CommandCenter
-        eventId={EVENT_ID}
-        role={role}
-        funMode={false}
-        onToggleFunMode={() => undefined}
-      />
+      <SessionContext.Provider value={session}>
+        <EventContext.Provider value={events}>
+          <CommandCenter />
+        </EventContext.Provider>
+      </SessionContext.Provider>
     </MemoryRouter>,
   );
 }
 
-/** A copy of the fixture with no attention items and nothing pending. */
-function quietState(): CommandCenterData {
-  return {
-    ...COMMAND_CENTER,
-    summary: {
-      ...COMMAND_CENTER.summary,
-      pending_approvals: 0,
-      open_incidents: 0,
-      overdue_tasks: 0,
-      unresponsive_speakers: 0,
-      attention_required: 0,
-    },
-    attention_items: [],
-  };
-}
-
 beforeEach(() => {
-  getCommandCenter.mockResolvedValue(COMMAND_CENTER);
-  getAgentActivity.mockResolvedValue(AGENT_ACTIVITY);
-  getApproval.mockResolvedValue(APPROVAL_DETAIL);
+  cognito.idToken = idToken({ name: "Priya Sharma", sub: "user-1" });
+  api.getCommandCenter.mockResolvedValue(OVERVIEW);
+  api.getApprovals.mockResolvedValue({ approvals: [NEWER, OLDEST], count: 2 });
+  api.getAuditLog.mockResolvedValue({ audit_events: EVENT_AUDIT, count: EVENT_AUDIT.length });
+  api.getAttention.mockResolvedValue({ event_id: ACTIVE_EVENT.event_id, attention_items: [], count: 0, critical_count: 0, high_count: 0 });
+  api.decideApproval.mockResolvedValue({});
 });
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("does anything need me?", () => {
-  it("says so plainly when nothing does", async () => {
-    getCommandCenter.mockResolvedValue(quietState());
-    getAgentActivity.mockResolvedValue({ ...AGENT_ACTIVITY, activity: [], count: 0 });
+/* --- Tests ---------------------------------------------------------------- */
 
-    renderPage();
+describe("loading (requirement 13.1)", () => {
+  it("renders skeletons in the shape of the page, not a spinner", () => {
+    api.getCommandCenter.mockReturnValue(new Promise(() => undefined));
 
-    expect(await screen.findByText(/Nothing needs you right now/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Needs your decision/i)).not.toBeInTheDocument();
-  });
+    renderCommandCenter();
 
-  it("leads with the count of decisions when some are waiting", async () => {
-    renderPage();
-    expect(await screen.findByText(/decision needs you/i)).toBeInTheDocument();
-  });
-
-  it("names outstanding items even when no decision is waiting", async () => {
-    // The dangerous case: no approval to show, but two incidents open. Silence here would read as
-    // "all clear".
-    getCommandCenter.mockResolvedValue({
-      ...COMMAND_CENTER,
-      attention_items: COMMAND_CENTER.attention_items.filter((i) => i.kind !== "APPROVAL"),
-    });
-
-    renderPage();
-
-    expect(await screen.findByText(/item needs attention|items need attention/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Nothing needs you right now/i)).not.toBeInTheDocument();
+    expect(screen.getByText(LOADING_LABEL)).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: ORBIT_HEADING })).not.toBeInTheDocument();
   });
 });
 
-describe("the dominant decision", () => {
-  it("shows the amount and the backend's projected balance", async () => {
-    renderPage();
+describe("the resolved page (requirements 4.1, 4.2, 4.3, 4.4, 4.6, 4.7)", () => {
+  it("greets the signed-in leader with the active organization", async () => {
+    renderCommandCenter();
 
-    expect(await screen.findByText(/Needs your decision/i)).toBeInTheDocument();
-    expect(screen.getByText("₹12,500")).toBeInTheDocument();
-    // Both sides of the transition, exactly as the backend projected them.
-    expect(screen.getByText(/₹75,000\s*→\s*₹62,500/)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Hello, Priya Sharma" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("ORG-wemakedev")).toBeInTheDocument();
   });
 
-  it("states that nothing has been committed", async () => {
-    renderPage();
+  it("takes the headline watched count from active_events, never total_events (A13)", async () => {
+    renderCommandCenter();
+
     expect(
-      await screen.findByText(/Nothing has been committed — the decision is yours/i),
+      await screen.findByText("CommunityOps is watching 2 events, of 5 total."),
+    ).toBeInTheDocument();
+    // `total_events` is 5 and counts drafts, so it is never the headline.
+    expect(screen.queryByText(/watching 5/)).not.toBeInTheDocument();
+  });
+
+  it("renders exactly one decision surface, prioritising financial then highest severity", async () => {
+    renderCommandCenter();
+
+    const decision = await screen.findByRole("region", { name: "Needs your decision" });
+
+    expect(
+      within(decision).getByRole("heading", { name: NEWER.title }),
+    ).toBeInTheDocument();
+    expect(within(decision).queryByText(OLDEST.title)).not.toBeInTheDocument();
+
+    // One surface, one set of decisions (requirements 4.1, 12.8).
+    expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Decline" })).toBeInTheDocument();
+  });
+
+  it("asks only the watched events that have a pending approval for one", async () => {
+    renderCommandCenter();
+
+    await screen.findByRole("region", { name: "Needs your decision" });
+
+    expect(api.getApprovals).toHaveBeenCalledTimes(1);
+    expect(api.getApprovals).toHaveBeenCalledWith("EVT-devcon-2026");
+  });
+
+  it("keeps the agent's reasoning behind 'Why this action?' (requirement 4.9)", async () => {
+    const user = userEvent.setup();
+
+    renderCommandCenter();
+
+    await screen.findByRole("region", { name: "Needs your decision" });
+    expect(screen.queryByText(OLDEST.reason)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Why this action?" }));
+
+    const drawer = screen.getByRole("dialog");
+
+    expect(within(drawer).getByText(NEWER.reason)).toBeInTheDocument();
+  });
+
+  it("draws one node per watched event and states the same counts in text", async () => {
+    renderCommandCenter();
+
+    const orbit = await screen.findByRole("region", { name: ORBIT_HEADING });
+
+    for (const event of OVERVIEW.events) {
+      expect(
+        within(orbit).getByRole("button", { name: new RegExp(event.name) }),
+      ).toBeInTheDocument();
+    }
+
+    expect(within(orbit).getAllByRole("button")).toHaveLength(OVERVIEW.events.length);
+    expect(
+      within(orbit).getByText("3 active and published events in this view."),
+    ).toBeInTheDocument();
+    expect(
+      within(orbit).getByText("2 decisions waiting, 1 critical incident, 2 overdue tasks, 1 blocked task."),
     ).toBeInTheDocument();
   });
 
-  it("does not offer approve or decline from the summary card", async () => {
-    // Deliberate: a decision worth this much visual weight is made beside its evidence, not from a
-    // card that invites approving without reading.
-    renderPage();
-    await screen.findByText(/Needs your decision/i);
-    expect(screen.queryByRole("button", { name: /^Approve$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Review and decide/i })).toBeInTheDocument();
+  it("sets the active event when a node is selected (requirement 4.5)", async () => {
+    const user = userEvent.setup();
+
+    renderCommandCenter();
+
+    const orbit = await screen.findByRole("region", { name: ORBIT_HEADING });
+
+    await user.click(within(orbit).getByRole("button", { name: /Hyderabad Summit/ }));
+
+    expect(setActiveEvent).toHaveBeenCalledWith("EVT-summit");
   });
 
-  it("warns when the projection says the commitment is unaffordable", async () => {
-    getApproval.mockResolvedValue({
-      approval: APPROVAL_DETAIL.approval,
-      budget_projection: {
-        ...APPROVAL_DETAIL.budget_projection!,
-        affordable: false,
-        projected_remaining: -2000,
-        blockers: ["ACCOMMODATION has only 2,000 left."],
-      },
-    });
+  it("builds the handled strip from the active event's audit, agent actors only", async () => {
+    renderCommandCenter();
 
-    renderPage();
+    const strip = await screen.findByRole("region", { name: HANDLED_HEADING });
 
-    expect(await screen.findByText(/Not affordable as things stand/i)).toBeInTheDocument();
-    expect(screen.getByText(/ACCOMMODATION has only 2,000 left/i)).toBeInTheDocument();
-  });
-});
-
-describe("resilience", () => {
-  it("still renders when the agent activity feed fails", async () => {
-    getAgentActivity.mockRejectedValue(new ApiError("down", 500));
-    renderPage();
-    expect(await screen.findByText(/decision needs you/i)).toBeInTheDocument();
+    expect(api.getAuditLog).toHaveBeenCalledWith("EVT-devcon-2026");
+    expect(within(strip).getByText("Speaker follow-up sent")).toBeInTheDocument();
+    // A volunteer's check-in is a person's action, so it is not what
+    // CommunityOps is handling (requirement 4.6).
+    expect(within(strip).queryByText("Check-in completed")).not.toBeInTheDocument();
   });
 
-  it("still renders when the approval detail cannot be fetched", async () => {
-    getApproval.mockRejectedValue(new ApiError("gone", 404));
-    renderPage();
-    // Falls back to naming the outstanding items rather than showing an empty page.
-    await waitFor(() =>
-      expect(screen.getByText(/items need attention|item needs attention/i)).toBeInTheDocument(),
-    );
-  });
+  it("labels the organization-wide feed as organization-wide (requirement 4.7)", async () => {
+    renderCommandCenter();
 
-  it("surfaces a failure of the command centre itself rather than an empty page", async () => {
-    getCommandCenter.mockRejectedValue(
-      new ApiError("You are not authorized to access this organization's data.", 403, "FORBIDDEN"),
-    );
+    const orgWide = await screen.findByRole("region", { name: ORG_WIDE_HEADING });
 
-    renderPage();
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(/not authorized/i);
-  });
-});
-
-describe("role differences", () => {
-  it("tells a team member what is reserved for leaders", async () => {
-    renderPage("TEAM_MEMBER");
     expect(
-      await screen.findByText(/Approvals, budget and the audit log are reserved/i),
+      within(orgWide).getByText(/across every event in ORG-wemakedev, not just this one/),
     ).toBeInTheDocument();
-  });
-
-  it("says nothing of the sort to a leader", async () => {
-    renderPage("LEADER");
-    await screen.findByText(/decision needs you/i);
-    expect(screen.queryByText(/reserved for community leaders/i)).not.toBeInTheDocument();
+    // The org-wide feed is not agent-filtered: it is the whole organization.
+    expect(within(orgWide).getByText("Task created")).toBeInTheDocument();
   });
 });
 
-describe("fun mode", () => {
-  it("adds no Hindi flourish while it is off", async () => {
-    renderPage();
-    await screen.findByText(/decision needs you/i);
-    expect(screen.queryByText(/Tension lene ka nahi/i)).not.toBeInTheDocument();
+describe("the calm state (requirement 4.8)", () => {
+  it("renders the calm sentences with the handled strip, and asks for no approvals", async () => {
+    api.getCommandCenter.mockResolvedValue(CALM_OVERVIEW);
+
+    renderCommandCenter();
+
+    expect(await screen.findByText(CALM_TITLE)).toBeInTheDocument();
+    expect(screen.getByText(CALM_DESCRIPTION)).toBeInTheDocument();
+    expect(api.getApprovals).not.toHaveBeenCalled();
+
+    const strip = screen.getByRole("region", { name: HANDLED_HEADING });
+
+    expect(within(strip).getByText("Speaker follow-up sent")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+});
+
+describe("failures (requirements 13.3, 13.8)", () => {
+  it("offers a retry that re-runs only the failed request", async () => {
+    const user = userEvent.setup();
+
+    api.getCommandCenter.mockRejectedValueOnce({ status: 500, category: "INTERNAL_ERROR" });
+
+    renderCommandCenter();
+
+    expect(await screen.findByText("CommunityOps couldn't load this view.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Hello, Priya Sharma" }),
+    ).toBeInTheDocument();
+    expect(api.getCommandCenter).toHaveBeenCalledTimes(2);
   });
 
-  it("adds one when it is on", async () => {
-    render(
-      <MemoryRouter>
-        <CommandCenter
-          eventId={EVENT_ID}
-          role="LEADER"
-          funMode
-          onToggleFunMode={() => undefined}
-        />
-      </MemoryRouter>,
+  it("keeps a failed handled strip inside the strip", async () => {
+    api.getAuditLog.mockRejectedValue({ status: 500, category: "INTERNAL_ERROR" });
+
+    renderCommandCenter();
+
+    const strip = await screen.findByRole("region", { name: HANDLED_HEADING });
+
+    expect(
+      within(strip).getByText("CommunityOps couldn't load this view."),
+    ).toBeInTheDocument();
+
+    // The rest of the page is still usable: the decision is still decidable and
+    // the visual still renders.
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: ORBIT_HEADING })).toBeInTheDocument();
+  });
+});
+
+describe("recording a decision (requirements 5.7, 13.11, 15.8, A9)", () => {
+  it("replaces the action row with the outcome and announces it", async () => {
+    const user = userEvent.setup();
+
+    renderCommandCenter();
+
+    await screen.findByRole("region", { name: "Needs your decision" });
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText("Decision recorded.")).toBeInTheDocument();
+    expect(api.decideApproval).toHaveBeenCalledWith(
+      "EVT-devcon-2026",
+      "APR-001",
+      "APPROVED",
+      "",
+      undefined,
     );
-    expect(await screen.findByText(/Tension lene ka nahi, action lene ka/i)).toBeInTheDocument();
+
+    // The concrete outcome, beside "Decision recorded." and with no claim that
+    // the workflow resumes (A9).
+    const result = screen.getByText("Decision recorded.").parentElement;
+
+    expect(result).toHaveTextContent(
+      "Incident resolution approved for later execution. This decision did not resolve the incident.",
+    );
+    expect(result).toHaveTextContent("CommunityOps prepared this action. You approved it.");
+    expect(screen.queryByText(/continue from here/)).not.toBeInTheDocument();
+
+    // The action row is gone, and the result was announced (requirement 15.8).
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      'Recorded: you approved "Replace cancelled speaker with backup".',
+    );
+  });
+
+  it("settles the card when the decision was already taken elsewhere", async () => {
+    const user = userEvent.setup();
+
+    api.decideApproval.mockRejectedValue({ status: 409, category: "CONFLICT" });
+
+    renderCommandCenter();
+
+    await screen.findByRole("region", { name: "Needs your decision" });
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText("This was already decided elsewhere.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+});
+
+
+describe("edited decisions", () => {
+  it("sends edited wording only as edited_action", async () => {
+    const user = userEvent.setup();
+    renderCommandCenter();
+    await screen.findByRole("region", { name: "Needs your decision" });
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const field = screen.getByLabelText("Adjust the action CommunityOps will take");
+    await user.clear(field);
+    await user.type(field, "Assign the confirmed backup speaker");
+    await user.click(screen.getByRole("button", { name: "Submit edit" }));
+
+    expect(api.decideApproval).toHaveBeenCalledWith(
+      "EVT-devcon-2026",
+      "APR-001",
+      "EDITED",
+      "",
+      "Assign the confirmed backup speaker",
+    );
+    expect(screen.getAllByText(/approved for later execution/i).length).toBeGreaterThan(0);
   });
 });
